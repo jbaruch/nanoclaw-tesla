@@ -326,6 +326,7 @@ def run_command(
         "tessie_result": accepted,
         "max_attempts": max_attempts,
         "sent_at": iso_utc(sent_at),
+        "sent_at_epoch": sent_at,
     }
     if not accepted:
         outcome["status"] = "failed"

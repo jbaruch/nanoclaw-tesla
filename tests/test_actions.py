@@ -134,6 +134,7 @@ def test_accepted_command_with_matching_fresh_state_is_confirmed() -> None:
     transport = standard_transport(state=state_payload(locked=True, stamp_s=NOW + 2))
     outcome = run(transport, "lock")
     assert outcome["tessie_result"] is True
+    assert outcome["sent_at_epoch"] == NOW
     assert outcome["status"] == "confirmed"
     assert outcome["field"] == "vehicle_state.locked"
     assert outcome["observed"] is True
