@@ -1,0 +1,8 @@
+{
+  "include": ["skills", "tests"],
+  "exclude": ["**/__pycache__", "**/.venv*", "**/node_modules"],
+  "extraPaths": ["skills/tessie-ops/scripts", "skills/tessie-watch/scripts"],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": true
+}
