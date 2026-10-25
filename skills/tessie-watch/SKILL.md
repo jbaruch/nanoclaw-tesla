@@ -1,6 +1,6 @@
 ---
 name: tessie-watch
-description: "Daily vehicle health watch for the Tessie overlay: wakes only when an addressable vehicle has a low unplugged battery, a Tessie credential or API failure, or unreadable state; otherwise stays silent. Triggers: 'tesla watch', 'vehicle health check', 'tessie watch'."
+description: "Daily vehicle health watch for the Tessie overlay: wakes only when an addressable vehicle has a low unplugged battery, a Tessie credential or API failure, or unreadable state, then tells the owner what was found; otherwise stays silent. Triggers: 'tesla watch', 'vehicle health check', 'tessie watch', 'monitor my Tesla', 'low battery alert'."
 cadence: "0 7 * * * (TZ=local)"
 script: "scripts/tessie-precheck.py"
 ---

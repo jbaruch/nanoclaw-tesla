@@ -1,6 +1,6 @@
 ---
 name: tessie-ops
-description: "Reads and controls the owner's Tesla vehicles through the Tessie REST API using deterministic scripts: list vehicles, check the allowlist, read battery/charging/climate/locks/tires/firmware/drives from cache without waking the car, and send confirmed controls (lock, unlock, climate, charging, charge limit, share destination, flash, drive tags). Triggers: 'is the car locked', 'tesla battery', 'lock the tesla', 'start climate', 'charge limit', 'send address to the car', 'tessie', 'my vehicles'."
+description: "Reads and controls the owner's Tesla vehicles through the Tessie REST API using deterministic scripts: list vehicles, check the allowlist, read battery/charging/climate/locks/tires/firmware/drives from cache without waking the car, and send confirmed controls (lock, unlock, climate, charging, charge limit, share destination, flash, drive tags). Triggers: 'is the car locked', 'where is the car', 'tesla battery', 'tire pressure', 'lock the tesla', 'unlock the tesla', 'start climate', 'charge limit', 'send address to the car', 'tag my drives', 'tessie', 'my vehicles'."
 ---
 
 # Tessie Ops
