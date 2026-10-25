@@ -1,0 +1,55 @@
+# nanoclaw-tesla
+
+[![tessl](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.tessl.io%2Fv1%2Fbadges%2Fjbaruch%2Fnanoclaw-tesla)](https://tessl.io/registry/jbaruch/nanoclaw-tesla)
+
+A NanoClaw overlay plugin that reads and controls Tesla vehicles through the [Tessie](https://developer.tessie.com/llms.txt) REST API. Everything the agent does is a deterministic script: the model picks the script and words the result, it does not drive the API call by call.
+
+## Status
+
+This is the Tesla1 foundation ([issue #1](https://github.com/jbaruch/nanoclaw-tesla/issues/1)): the Tessie client, vehicle allowlist, chat authorization, cached reads, confirmed controls, a no-wake health check, packaging and CI. The Tesla2–7 features ([#2](https://github.com/jbaruch/nanoclaw-tesla/issues/2)–[#7](https://github.com/jbaruch/nanoclaw-tesla/issues/7)) compose these scripts and are not built here. Solar and Powerwall ([#8](https://github.com/jbaruch/nanoclaw-tesla/issues/8)) stays deferred.
+
+Merged source is not an installed plugin and a passing test suite is not a live smoke test; see `docs/setup.md` for the owner steps that remain.
+
+## What it guarantees
+
+- **Credential stays in the vault.** The OneCLI gateway injects the Tessie token for `api.tessie.com`. Scripts send no `Authorization` header, accept no URL or token argument, and refuse redirects.
+- **Default deny.** A vehicle is addressable only when listed in the owner's allowlist and Tessie reports it as `OWNER` and active. Shared, `DRIVER` and unnamed vehicles stay out unless the owner marks one `shared`.
+- **Chat authorization.** Controls need a control or owner chat; precise location needs an owner chat. The chat id comes from the host-provided container environment, not from a flag the agent passes.
+- **Reads never wake the car.** Each read probes status and uses Tessie's cache. No wake action exists.
+- **Acceptance is not state.** Tessie's `result: true` is reported as `accepted`; only a fresh cached state readback produces `confirmed`.
+- **Bounded retries.** One request per call; controls ask Tessie for at most 3 attempts. HTTP 429, 408 and 5xx fail with a diagnostic instead of looping.
+
+## Skills
+
+| Skill | Purpose |
+| --- | --- |
+| `tessie-ops` | Action router: list vehicles, inspect the allowlist, read state, read location, preview and run controls, confirm state, tag drives |
+| `tessie-watch` | Daily precheck that wakes the agent only for a low unplugged battery, a credential or API failure, or unreadable state |
+
+## Rules
+
+| Rule | Purpose |
+| --- | --- |
+| `rules/tessie-credentials.md` | The token lives in the vault; the agent never holds, requests or prints it |
+| `rules/vehicle-allowlist.md` | Only allowlisted OWNER vehicles are addressable |
+| `rules/location-privacy.md` | Precise location stays in owner chats |
+| `rules/command-authorization.md` | Controls need an authorized chat, a named plan and a reported outcome |
+| `rules/nanoclaw-skill-root.md` | Command blocks use the container's skill root |
+
+## Install
+
+The overlay loads per chat through `containerConfig.additionalTiles` with the bare name `nanoclaw-tesla`, on an owner chat that is not main. Token, allowlist, install and verification steps are in `docs/setup.md`; the supported commands and their limits are in `docs/command-surface.md`.
+
+## Development
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m ruff check tests skills && python -m ruff format --check tests skills
+python -m pyright
+python -m pytest
+```
+
+Tests use synthetic VINs, a frozen clock and a fake transport; nothing reaches Tessie. `requirements-dev.lock` is compiled from `requirements-dev.txt` with `uv pip compile requirements-dev.txt --python-version 3.11 --generate-hashes -o requirements-dev.lock`.
+
+Set the `FLEET_DISPATCH_TOKEN` and `TESSL_TOKEN` repository secrets before the review and publish workflows run (`.env.example`).
