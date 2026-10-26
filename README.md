@@ -6,7 +6,7 @@ Provider identity scaffold for the Tesla overlay. Vehicle operations and schedul
 
 ## Installation
 
-No bootstrap artifact is published. This private scaffold installs no vehicle integration.
+Install with `tessl install jbaruch/nanoclaw-tesla`. The initial package contains the provider identity rule only; it installs no vehicle integration.
 
 ## Rules
 

@@ -1,0 +1,32 @@
+name: Review & Publish Plugin
+
+# Thin caller for the canonical fleet publish pipeline
+# (jbaruch/coding-policy#206). All steps live in the reusable workflow;
+# this file carries only the triggers and this repo's inputs. The workflow
+# FILE name (publish.yml) is what post-merge tooling watches.
+#
+# Requires the repo secret TESSL_TOKEN
+# (https://github.com/jbaruch/nanoclaw-tesla/settings/secrets/actions).
+# Renewal: the `uses:` SHA is the jbaruch/coding-policy commit this caller was
+# written against; Dependabot's github-actions ecosystem proposes bumps.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# The reusable workflow's own permissions are capped by what the caller
+# grants — declare the publish pipeline's needs explicitly.
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  publish:
+    uses: jbaruch/coding-policy/.github/workflows/publish-plugin.yml@d6dc758bd85799a56932c071926b5bafb061bc7e
+    # Forward only the token the reusable workflow declares (not `inherit`).
+    secrets:
+      TESSL_TOKEN: ${{ secrets.TESSL_TOKEN }}
+    with:
+      stamp-changelog: true

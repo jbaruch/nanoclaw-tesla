@@ -2,7 +2,9 @@
   "name": "jbaruch/nanoclaw-tesla",
   "version": "0.0.0",
   "description": "Provider identity scaffold for the NanoClaw Tesla overlay.",
-  "private": true,
+  "private": false,
   "skills": [],
-  "rules": ["rules/provider-identity.md"]
+  "rules": [
+    "rules/provider-identity.md"
+  ]
 }
