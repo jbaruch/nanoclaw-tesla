@@ -18,7 +18,7 @@ from tessie_cli import Runtime
 from tessie_core import HttpResponse, TessieClient
 
 ROOT = Path(__file__).resolve().parent.parent
-NOW = 1_800_000_000.0  # frozen "now" (epoch seconds) for every time-dependent test
+NOW = 1_700_000_000.0  # frozen "now" (epoch seconds) for every time-dependent test
 
 OWNER_CHAT = "tg:owner-chat"
 CONTROL_CHAT = "tg:control-chat"
