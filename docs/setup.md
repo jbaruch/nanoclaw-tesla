@@ -81,7 +81,7 @@ provider call, browser action, grant change or vehicle operation.
 
 ## Overlay installation
 
-Install the published plugin with Tessl and load bare overlay name
+Run `tessl install jbaruch/nanoclaw-tesla`, then load bare overlay name
 `nanoclaw-tesla` through an authorized non-main chat's
 `containerConfig.additionalTiles`. Restart that chat through the canonical host
 workflow after installation. Preserve the actual registered native chat IDs.
@@ -136,10 +136,9 @@ current plan. Consult the [official API index](https://developer.tessie.com/llms
 and account terms before enabling scheduled volume. No unverified price or quota
 is assumed. The fixed foundation routes do not require arbitrary Fleet passthrough.
 
-The broker rechecks live inventory before each vehicle request. Static explicit
-mode uses one Tessie call for a vehicle list and five for a normal state read or
-state-confirmed command. Dynamic non-archived mode adds one fresh inventory call
-when each CLI invocation loads policy: two for a list and six for a state read or
+The broker rechecks live inventory before each vehicle request. Both protected
+selection modes also use fresh inventory when each CLI invocation loads policy:
+two Tessie calls for a vehicle list and six for a normal state read or
 state-confirmed command. Preview is a separate invocation. The gateway owns
 credential injection for every provider request.
 A daily watch composes the scripts and multiplies that budget by admitted vehicles.

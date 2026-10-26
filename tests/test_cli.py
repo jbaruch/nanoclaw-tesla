@@ -211,7 +211,8 @@ def test_http_failure_prints_a_diagnostic_and_no_stdout(tmp_path: Path) -> None:
     transport.routes[("GET", f"/{RUSTLER}/status")] = json_response({}, status=401)
     code, out, err, _ = run(reader, ["state"], tmp_path, transport)
     assert (code, out) == (1, "")
-    assert "401" in err and "dash.tessie.com/settings/api" in err
+    assert "401" in err and "docs/setup.md, Recovery" in err
+    assert "existing" in err and "create a new token" not in err
 
 
 # --- tessie-command ------------------------------------------------------------------

@@ -39,6 +39,8 @@ Merged source is not an installed plugin and a passing test suite is not a live 
 
 ## Install
 
+Install the published provider with `tessl install jbaruch/nanoclaw-tesla`.
+
 The overlay loads per chat through `containerConfig.additionalTiles` with the bare name `nanoclaw-tesla`, on an owner chat that is not main. Token, allowlist, install and verification steps are in `docs/setup.md`; the supported commands and their limits are in `docs/command-surface.md`.
 
 ## Development

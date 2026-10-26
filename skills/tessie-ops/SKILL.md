@@ -5,7 +5,7 @@ description: "Reads and controls the owner's Tesla vehicles through the Tessie R
 
 # Tessie Ops
 
-This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
+This skill is an action router: choose the entry step matching the user's intent and follow its explicit continuation. Do not run unrelated steps or parallelize.
 
 Every Tessie call is one of the scripts below. Their docstrings own arguments, output shape and exit codes; this skill names which script serves which intent. Production scripts use the version-1 native host broker; missing authority denies without HTTP fallback. Protected host policy grants vehicle/chat access. The existing OneCLI gateway injects the vaulted key; never ask for or print a token (`rules/tessie-credentials.md`). Exit 4 means the allowlist or chat authorization denied the request: report the `denied_reason` and stop. Any other non-zero exit: report the stderr diagnostic and stop.
 
@@ -62,13 +62,13 @@ Drivers are owner-only. Exit 4 is final; report it and stop.
 
 ## Step 6 — Preview A Control
 
-Use for every control request, before Step 7. Finish by showing the user the plan.
+Use for every control request, before Step 7. Show the user the plan.
 
 ```bash
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py <action> --vehicle "<alias>" --dry-run
 ```
 
-`<action>` is `lock`, `unlock`, `start_climate`, `stop_climate`, `set_temperatures` (`--temperature`), `start_charging`, `stop_charging`, `set_charge_limit` (`--percent`), `share` (`--value`) or `flash`. State the vehicle (alias and VIN suffix) and the action to the user. Destination sharing also requires an owner chat; the script refuses other chats before a plan or effect. Proceed to Step 7 only when the user's request already asked for that action on that vehicle.
+`<action>` is `lock`, `unlock`, `start_climate`, `stop_climate`, `set_temperatures` (`--temperature`), `start_charging`, `stop_charging`, `set_charge_limit` (`--percent`), `share` (`--value`) or `flash`. State the vehicle (alias and VIN suffix) and the action to the user. Destination sharing also requires an owner chat; the script refuses other chats before a plan or effect. Proceed immediately to Step 7 when the user's request already authorizes that action on that vehicle. Otherwise finish here and wait for the missing authorization.
 
 ## Step 7 — Run A Control
 
@@ -97,8 +97,10 @@ Pass the earlier control's `sent_at_epoch` (unix seconds), plus `--temperature` 
 
 ## Step 9 — Preview Drive Tags
 
-Use when the user asks to tag drives for later reporting. Finish by showing the
-plan's vehicle, drive IDs and tag to the user.
+Use when the user asks to tag drives for later reporting. Show the plan's
+vehicle, drive IDs and tag to the user. Proceed immediately to Step 10 when the
+original request already authorizes those drive IDs, tag and vehicle. Otherwise
+finish here and wait for the missing authorization.
 
 ```bash
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py set_drive_tag --drives "<ids>" --tag "<tag>" --vehicle "<alias>" --dry-run

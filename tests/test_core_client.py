@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import threading
 import urllib.request
@@ -21,6 +22,7 @@ from tessie_core import (
     UrllibTransport,
     failure_for,
     make_opener,
+    report_failure,
 )
 
 
@@ -134,13 +136,34 @@ def test_rate_limit_surfaces_retry_after_without_looping() -> None:
     assert len(transport.calls) == 1
 
 
-def test_error_bodies_never_echo_secret_shaped_text() -> None:
-    response = HttpResponse(
-        401, {}, json.dumps({"error": "bad Bearer abc123SECRET and access_token=zzz"}).encode()
-    )
-    message = failure_for(response).message
-    assert "abc123SECRET" not in message
-    assert "zzz" not in message
+@pytest.mark.parametrize("status", [401, 403, 404, 408, 429, 500, 302, 418])
+@pytest.mark.parametrize("field", ["error", "message"])
+def test_error_bodies_never_reach_rendered_diagnostics(status: int, field: str) -> None:
+    # These are synthetic noncredential markers: no parser should depend on a
+    # finite credential regex or echo arbitrary provider text to stderr.
+    private = "api_key=synthetic-key password=synthetic-pass Basic synthetic-basic"
+    response = HttpResponse(status, {}, json.dumps({field: private}).encode())
+    error = failure_for(response)
+    err = io.StringIO()
+    assert report_failure(error, err) == 1
+    assert str(status) in err.getvalue()
+    for marker in ["synthetic-key", "synthetic-pass", "synthetic-basic", private]:
+        assert marker not in err.getvalue()
+
+
+def test_401_repairs_existing_vault_without_new_credential_request() -> None:
+    message = failure_for(HttpResponse(401, {}, b"{}")).message
+    assert "existing OneCLI vaulted credential" in message
+    assert "docs/setup.md, Recovery" in message
+    assert "do not create or request another token" in message
+    assert "dash.tessie.com" not in message
+
+
+@pytest.mark.parametrize("header", ["api_key=synthetic-key", "Basic synthetic-basic"])
+def test_rate_limit_does_not_echo_arbitrary_header_values(header: str) -> None:
+    error = failure_for(HttpResponse(429, {"Retry-After": header}, b"{}"))
+    assert error.retry_after is None
+    assert header not in error.message
 
 
 def test_non_json_success_body_is_a_malformed_response() -> None:

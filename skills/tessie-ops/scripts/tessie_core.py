@@ -83,8 +83,11 @@ DRIVE_TAG_ROUTE = "/{vin}/drives/set_tag"
 FORBIDDEN_QUERY_KEYS = frozenset({"access_token", "token", "api_key", "authorization"})
 FORBIDDEN_HEADERS = frozenset({"authorization", "proxy-authorization", "x-api-key"})
 
-_SECRET_SHAPES = re.compile(r"(?i)(bearer\s+\S+|access_token=\S+|token[\"':= ]+\S+)")
-_RETRY_AFTER_SHAPE = re.compile(r"^[0-9A-Za-z ,:+\-]{1,40}$")
+_RETRY_AFTER_SHAPE = re.compile(
+    r"^(?:[0-9]{1,10}|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-9]{2} "
+    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{4} "
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2} GMT)$"
+)
 
 
 class TessieError(Exception):
@@ -173,7 +176,7 @@ class UrllibTransport:
             ) from exc
         except (urllib.error.URLError, ConnectionError) as exc:
             raise TessieError(
-                f"Tessie is unreachable ({method} {_route_label(url)}): {exc} — check the "
+                f"Tessie is unreachable ({method} {_route_label(url)}); check the "
                 "OneCLI gateway and network, then retry",
                 code="network",
             ) from exc
@@ -192,37 +195,17 @@ def _header(headers: Mapping[str, str], name: str) -> str | None:
     return None
 
 
-def _scrub(text: str) -> str:
-    return _SECRET_SHAPES.sub("[redacted]", text)[:200]
-
-
-def _error_detail(body: bytes) -> str:
-    """Short, scrubbed `error`/`message` text from an error body, if any."""
-    try:
-        payload = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return ""
-    if isinstance(payload, dict):
-        for key in ("error", "message"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return _scrub(value.strip())
-    return ""
-
-
 def failure_for(response: HttpResponse) -> TessieError:
     """Map a non-2xx response to an actionable, token-free TessieError."""
     status = response.status
-    detail = _error_detail(response.body)
-    suffix = f" — Tessie said: {detail}" if detail else ""
     retry_after = _header(response.headers, "Retry-After")
     if retry_after is not None and not _RETRY_AFTER_SHAPE.match(retry_after):
         retry_after = None
     if status == 401:
         message = (
             "Tessie rejected the credential (HTTP 401): the vaulted token is missing, expired "
-            "or revoked. Create a new token at https://dash.tessie.com/settings/api and update "
-            "the OneCLI secret 'Tessie API token' (docs/setup.md, Recovery)"
+            "or revoked. Have the host owner repair the existing OneCLI vaulted credential "
+            "and gateway (docs/setup.md, Recovery); do not create or request another token"
         )
     elif status == 403:
         message = (
@@ -253,7 +236,7 @@ def failure_for(response: HttpResponse) -> TessieError:
     else:
         message = f"Tessie returned an unexpected status (HTTP {status})"
     return TessieError(
-        message + suffix,
+        message,
         code=f"http_{status}",
         http_status=status,
         retry_after=retry_after,
@@ -397,14 +380,18 @@ class TessieClient:
 
 # --- Location redaction -------------------------------------------------------
 
-_COORDINATE_KEY = re.compile(r"(?i)(^|_)(lat|latitude|lng|lon|longitude|gps|heading)(_|$)|^native_")
+_COORDINATE_KEY = re.compile(
+    r"(?i)(^|_)(lat|latitude|lng|lon|longitude|gps|heading|coordinates?|coords|"
+    r"position|geopoint|geolocation|geometry)(_|$)|^native_"
+)
 _ADDRESS_KEY = re.compile(
-    r"(?i)address|street|(^|_)location$|route_destination|^destination|^place"
+    r"(?i)address|street|(^|_)(locations?|places?)(_|$)|route_destination|^destination"
 )
 
 
 def _is_location_key(key: str) -> bool:
-    return bool(_COORDINATE_KEY.search(key) or _ADDRESS_KEY.search(key))
+    normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", key).replace("-", "_")
+    return bool(_COORDINATE_KEY.search(normalized) or _ADDRESS_KEY.search(normalized))
 
 
 def redact_location(value: Any) -> tuple[Any, int]:

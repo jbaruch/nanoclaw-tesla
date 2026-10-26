@@ -46,3 +46,24 @@ def test_redaction_does_not_mutate_its_input() -> None:
     payload = state_payload()
     redact_location(payload)
     assert payload["drive_state"]["latitude"] == LAT
+
+
+def test_explicit_coordinate_containers_and_saved_places_are_removed() -> None:
+    payload = {
+        "results": [
+            {
+                "coordinates": [LAT, LON],
+                "saved_place": "Synthetic private clinic",
+                "savedPlace": "Synthetic private home",
+                "starting_saved_place": "Synthetic private office",
+                "current-position": {"x": LAT, "y": LON},
+                "geoLocation": [LAT, LON],
+                "geometry": {"type": "Point", "value": [LAT, LON]},
+                "distance": 12.3,
+            }
+        ]
+    }
+    clean, dropped = redact_location(payload)
+    assert clean == {"results": [{"distance": 12.3}]}
+    assert dropped == 7
+    assert payload["results"][0]["coordinates"] == [LAT, LON]
