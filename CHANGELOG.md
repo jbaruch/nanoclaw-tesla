@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.1.0 — 2026-10-26
+
 ### Add the script-first Tessie foundation (#1)
 
 Ship the Tesla1 deterministic REST client, vehicle selection, protected chat/VIN policy, cached reads, common controls and quiet daily health precheck. Reuse the existing OneCLI gateway and vaulted Tessie API key; no additional credential, native actor or vault migration is required. The requested dynamic non-archived policy derives current active owner/shared vehicles from fresh inventory on each operation; no VIN snapshot or daemon substitutes for it. Production scripts call the native host broker, which derives registered source identity, validates fixed routes/parameters and filters non-owner location before replying. Agent-writable allowlists grant no control or location access.
