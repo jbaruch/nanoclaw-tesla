@@ -4,5 +4,5 @@
   "description": "Provider identity scaffold for the NanoClaw Tesla overlay.",
   "private": true,
   "skills": [],
-  "rules": []
+  "rules": ["rules/provider-identity.md"]
 }
