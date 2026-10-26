@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-applyTo: ".tessl-plugin/plugin.json, README.md, tessl.json — when maintaining this provider's identity or installation references"
+applyTo: ".tessl-plugin/plugin.json, README.md, tessl.json, rules/**, skills/** — when maintaining this provider's identity or installation references, or adding, removing or renaming declared rule and skill surfaces"
 ---
 
 # Provider Identity
