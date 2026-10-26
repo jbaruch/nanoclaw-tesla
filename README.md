@@ -45,10 +45,13 @@ The overlay loads per chat through `containerConfig.additionalTiles` with the ba
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 python -m pip install --require-hashes -r requirements-dev.lock
+python -m pre_commit install
 python -m ruff check tests skills && python -m ruff format --check tests skills
 python -m pyright
 python -m pytest
 ```
+
+The normal commit hook runs pinned Gitleaks source through pre-commit 4.7.0. Keep the hook installed; its upstream SHA renewal cadence lives beside the pin.
 
 Tests use synthetic VINs, a frozen clock and a fake transport; nothing reaches Tessie. `requirements-dev.lock` is compiled from `requirements-dev.txt` with `uv pip compile requirements-dev.txt --python-version 3.11 --generate-hashes -o requirements-dev.lock`.
 

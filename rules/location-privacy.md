@@ -8,7 +8,7 @@ description: Precise vehicle location and street addresses stay in owner chats
 ## Redaction by Default
 
 - Script output strips coordinates, headings and street addresses
-- Saved location names such as `Home` and `Work` may appear
+- Saved-place labels follow the owner-chat location limit
 - Never reconstruct a position from other fields or from earlier output
 
 ## Owner Chats Only
@@ -23,6 +23,6 @@ description: Precise vehicle location and street addresses stay in owner chats
 
 - Never post coordinates, addresses or map links outside an owner chat
 - Never copy a location into another chat, a file in shared state or a scheduled summary
-- Describe a position at the level a saved location name allows, or not at all
+- Keep all place labels and location history in owner chats
 - Non-owner drive history contains only the host positive field projection
 - The drivers list follows the owner-chat limit

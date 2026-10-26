@@ -126,6 +126,33 @@ def test_owner_vehicle_that_went_inactive_is_denied() -> None:
     assert caught.value.code == "inactive"
 
 
+@pytest.mark.parametrize(
+    "row",
+    [
+        None,
+        42,
+        {},
+        {"vin": 7},
+        {"vin": "invalid"},
+        {"vin": RUSTLER, "last_state": []},
+        {"vin": RUSTLER, "is_active": "true"},
+    ],
+)
+def test_malformed_inventory_rows_refuse_the_whole_response(row):
+    good = inventory_payload()["results"][1]
+    with pytest.raises(TessieError) as caught:
+        parse_inventory({"results": [good, row]})
+    assert caught.value.code == "malformed_response"
+    assert "report" in caught.value.message
+
+
+def test_duplicate_inventory_rows_are_not_last_writer_wins():
+    row = inventory_payload()["results"][0]
+    with pytest.raises(TessieError) as caught:
+        parse_inventory({"results": [row, row]})
+    assert caught.value.code == "malformed_response"
+
+
 def test_unlisted_vin_and_unknown_alias_are_denied() -> None:
     with pytest.raises(TessieError) as vin:
         select_vehicle(POWERSLAVE, allowlist(), inventory())

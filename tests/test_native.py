@@ -132,7 +132,7 @@ def test_transport_carries_fixed_request_and_host_dispatch_time_without_headers(
             }
 
     ipc = IPC()
-    transport = NativeTransport(ipc)  # type: ignore[arg-type]
+    transport = NativeTransport(ipc)  # type: ignore[arg-type] — fixture supplies only call()
     transport.confirmation = "Synthetic car:lock"
     result = transport.send(
         "POST",

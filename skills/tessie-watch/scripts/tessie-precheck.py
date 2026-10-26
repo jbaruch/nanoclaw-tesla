@@ -7,7 +7,9 @@ runs) while every addressable vehicle is healthy. It is true, with the evidence 
 `data`, when:
 
 - a `tessie-ops` script fails or times out (revoked token, bad allowlist, Tessie
-  down) — `data.reason` is `script_failed`, `script_timeout` or `bad_output`;
+  down) — setup failures use `data.reason`; per-vehicle failures use
+  `data.alerts[].kind` `script_failed`, `script_timeout` or `bad_output` and
+  do not discard earlier alerts or prevent checking later vehicles;
 - a cached state read lacks the battery fields — `data.alerts[].kind` is
   `state_incomplete`;
 - a vehicle's battery is below the threshold and it is not plugged in —
@@ -107,6 +109,17 @@ def alerts_for(alias: str, state: dict[str, Any], threshold: int) -> list[dict[s
         return [
             {"alias": alias, "kind": "state_incomplete", "missing": "charge_state.battery_level"}
         ]
+    if not isinstance(charging, str) or charging not in {
+        "Disconnected",
+        "Charging",
+        "Starting",
+        "Complete",
+        "Stopped",
+        "NoPower",
+    }:
+        return [
+            {"alias": alias, "kind": "state_incomplete", "missing": "charge_state.charging_state"}
+        ]
     if level < threshold and charging == "Disconnected":
         return [
             {
@@ -130,11 +143,24 @@ def decide(runner: Runner, directory: Path) -> dict[str, Any]:
     if not isinstance(vehicles, list):
         raise WatchFailure("bad_output", "tessie-vehicles.py printed no vehicles list")
     alerts: list[dict[str, Any]] = []
-    for row in vehicles:
+    for index, row in enumerate(vehicles):
         alias = row.get("alias") if isinstance(row, dict) else None
-        if not isinstance(alias, str):
-            raise WatchFailure("bad_output", "tessie-vehicles.py printed a row without an alias")
-        state = call_ops(runner, directory, "tessie-read.py", "state", "--vehicle", alias)
+        if not isinstance(alias, str) or not alias.strip():
+            alerts.append(
+                {
+                    "kind": "bad_output",
+                    "vehicle_index": index,
+                    "error": "tessie-vehicles.py printed a row without a valid alias",
+                }
+            )
+            continue
+        try:
+            state = call_ops(runner, directory, "tessie-read.py", "state", "--vehicle", alias)
+        except WatchFailure as failure:
+            alerts.append(
+                {"alias": alias, "kind": failure.reason, "error": failure.detail, **failure.extra}
+            )
+            continue
         alerts.extend(alerts_for(alias, state, threshold))
     if alerts:
         return {

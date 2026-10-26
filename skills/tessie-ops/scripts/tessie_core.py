@@ -401,13 +401,9 @@ _COORDINATE_KEY = re.compile(r"(?i)(^|_)(lat|latitude|lng|lon|longitude|gps|head
 _ADDRESS_KEY = re.compile(
     r"(?i)address|street|(^|_)location$|route_destination|^destination|^place"
 )
-# Saved-location names ("Home", "Work") may pass; street addresses may not.
-_SAVED_LOCATION_KEY = re.compile(r"(?i)(^|_)saved_location$")
 
 
 def _is_location_key(key: str) -> bool:
-    if _SAVED_LOCATION_KEY.search(key):
-        return False
     return bool(_COORDINATE_KEY.search(key) or _ADDRESS_KEY.search(key))
 
 

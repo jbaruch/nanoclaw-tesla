@@ -75,11 +75,86 @@ def test_threshold_comes_from_the_allowlist_watch_setting() -> None:
     assert precheck.evaluate(Scripted(threshold=60), OPS)["wake_agent"] is False
 
 
+@pytest.mark.parametrize("failure", ["script_failed", "script_timeout", "bad_output"])
+def test_vehicle_failure_preserves_prior_alerts_and_checks_later_vehicles(failure):
+    scripted = Scripted(
+        threshold=35,
+        vehicles=("First fixture", "Broken fixture", "Last fixture"),
+        states={
+            "First fixture": state_reply(30, "Disconnected"),
+            "Last fixture": state_reply(5, "Disconnected"),
+        },
+    )
+    attempts = []
+
+    def runner(argv):
+        if Path(argv[0]).name == "tessie-read.py":
+            alias = argv[argv.index("--vehicle") + 1]
+            attempts.append(alias)
+            if alias == "Broken fixture":
+                if failure == "script_timeout":
+                    raise subprocess.TimeoutExpired(argv, 240)
+                if failure == "bad_output":
+                    return completed("malformed fixture")
+                return completed(stderr="Tessie HTTP 408; inspect cached status", code=1)
+        return scripted(argv)
+
+    result = precheck.evaluate(runner, OPS)
+    assert attempts == ["First fixture", "Broken fixture", "Last fixture"]
+    assert result["wake_agent"] is True
+    assert result["data"]["reason"] == "attention_needed"
+    assert result["data"]["checked"] == 3
+    alerts = result["data"]["alerts"]
+    assert [(a["alias"], a["kind"]) for a in alerts] == [
+        ("First fixture", "low_battery_unplugged"),
+        ("Broken fixture", failure),
+        ("Last fixture", "low_battery_unplugged"),
+    ]
+    assert alerts[0]["threshold"] == alerts[2]["threshold"] == 35
+    assert "error" in alerts[1]
+
+
+def test_malformed_vehicle_row_preserves_alerts_and_continues_later_rows():
+    scripted = Scripted(
+        vehicles=("First fixture", "Last fixture"),
+        states={
+            "First fixture": state_reply(5, "Disconnected"),
+            "Last fixture": state_reply(6, "Disconnected"),
+        },
+    )
+
+    def runner(argv):
+        if Path(argv[0]).name == "tessie-vehicles.py":
+            return completed(
+                json.dumps(
+                    {"vehicles": [{"alias": "First fixture"}, {}, {"alias": "Last fixture"}]}
+                )
+            )
+        return scripted(argv)
+
+    result = precheck.evaluate(runner, OPS)
+    assert [a["kind"] for a in result["data"]["alerts"]] == [
+        "low_battery_unplugged",
+        "bad_output",
+        "low_battery_unplugged",
+    ]
+    assert result["data"]["alerts"][1]["vehicle_index"] == 1
+
+
 def test_incomplete_state_wakes_instead_of_passing_silently() -> None:
     runner = Scripted(states={"Bradbury": json.dumps({"vehicle_status": "asleep", "data": {}})})
     result = precheck.evaluate(runner, OPS)
     assert result["wake_agent"] is True
     assert result["data"]["alerts"][0]["kind"] == "state_incomplete"
+
+
+@pytest.mark.parametrize("charging", [None, True, 3, {}, "", "Unknown", "invalid"])
+def test_unreadable_charging_state_never_reports_all_clear(charging):
+    result = precheck.evaluate(Scripted(states={"Bradbury": state_reply(64, charging)}), OPS)
+    assert result["wake_agent"] is True
+    assert result["data"]["alerts"] == [
+        {"alias": "Bradbury", "kind": "state_incomplete", "missing": "charge_state.charging_state"}
+    ]
 
 
 def test_every_read_is_a_cached_state_read_and_never_a_wake() -> None:

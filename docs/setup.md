@@ -40,6 +40,11 @@ conversation claims, process variables and agent-writable files grant nothing.
 The scripts' additional init-environment witness can refuse a request but cannot
 grant access the host denies. Legacy scratch allowlists are not production inputs.
 
+The host projects top-level `low_battery_percent` into
+`watch.low_battery_percent` in the own-role IPC response. `tessie-allowlist.py show`
+exposes that client shape to the watch precheck. The precheck retains per-vehicle
+errors alongside battery alerts and continues checking every listed vehicle.
+
 ## Existing OneCLI credential proxy
 
 Reuse the existing OneCLI-vaulted generic Tessie API key for `api.tessie.com`.

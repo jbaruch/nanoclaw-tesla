@@ -15,6 +15,6 @@ The fire-time precheck (`scripts/tessie-precheck.py`) reads every addressable ve
 
 The wake data names a `reason` and, for `attention_needed`, an `alerts` list. If the data carries no alert and no failure, finish silently.
 
-State each fact as a declarative sentence in the chat's language: which vehicle (alias), what the precheck found, and what the owner can do. For `low_battery_unplugged`, add the battery level and say it is not plugged in. For `script_failed`, `script_timeout`, `bad_output` or `precheck_error`, quote the `error` text and point to `docs/setup.md` Recovery. Never include coordinates or addresses. Never ask whether the owner already knows.
+Report every item in `alerts`, including per-vehicle failures alongside battery alerts. State each fact as a declarative sentence in the chat's language: which vehicle (alias), what the precheck found, and what the owner can do. For `low_battery_unplugged`, add the battery level and say it is not plugged in. For a top-level failure or an alert with kind `script_failed`, `script_timeout`, `bad_output` or `precheck_error`, quote its `error` text and point to `docs/setup.md` Recovery. Never include coordinates or addresses. Never ask whether the owner already knows.
 
 Send the message with `mcp__nanoclaw__send_message` and finish here. Do not run controls: a notice grants no authority to act on the vehicle.

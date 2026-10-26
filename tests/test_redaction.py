@@ -17,7 +17,7 @@ def test_coordinates_and_addresses_are_dropped_recursively() -> None:
     assert dropped >= 6
 
 
-def test_saved_location_names_pass_but_street_addresses_do_not() -> None:
+def test_saved_place_labels_and_street_addresses_are_removed_from_history() -> None:
     clean, _ = redact_location(
         {
             "results": [
@@ -25,17 +25,14 @@ def test_saved_location_names_pass_but_street_addresses_do_not() -> None:
                     "starting_location": ADDRESS,
                     "starting_saved_location": "Home",
                     "ending_saved_location": "Work",
+                    "saved_location": "Private clinic",
                     "ending_location": ADDRESS,
                     "distance": 12.3,
                 }
             ]
         }
     )
-    assert clean == {
-        "results": [
-            {"starting_saved_location": "Home", "ending_saved_location": "Work", "distance": 12.3}
-        ]
-    }
+    assert clean == {"results": [{"distance": 12.3}]}
 
 
 def test_non_location_state_is_untouched() -> None:

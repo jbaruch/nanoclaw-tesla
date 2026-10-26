@@ -289,12 +289,34 @@ def parse_inventory(payload: object) -> dict[str, LiveVehicle]:
             code="malformed_response",
         )
     inventory: dict[str, LiveVehicle] = {}
-    for item in results:
-        if not isinstance(item, dict) or not isinstance(item.get("vin"), str):
-            continue
+    for index, item in enumerate(results):
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("vin"), str)
+            or not VIN_PATTERN.fullmatch(item["vin"].upper())
+        ):
+            raise TessieError(
+                f"Tessie /vehicles row {index} lacks a valid VIN; report the response schema",
+                code="malformed_response",
+            )
+        if item["vin"].upper() in inventory:
+            raise TessieError(
+                f"Tessie /vehicles row {index} repeats a VIN; report the response schema",
+                code="malformed_response",
+            )
         last_state = item.get("last_state")
+        if last_state is not None and not isinstance(last_state, dict):
+            raise TessieError(
+                "Tessie /vehicles has an invalid state object; report the schema",
+                code="malformed_response",
+            )
         state = last_state if isinstance(last_state, dict) else {}
         config = state.get("vehicle_config")
+        if config is not None and not isinstance(config, dict):
+            raise TessieError(
+                "Tessie /vehicles has an invalid vehicle config; report the schema",
+                code="malformed_response",
+            )
         car_type = config.get("car_type") if isinstance(config, dict) else None
         access = state.get("access_type", item.get("access_type"))
         if (
@@ -302,9 +324,22 @@ def parse_inventory(payload: object) -> dict[str, LiveVehicle]:
             and "access_type" in item
             and state["access_type"] != item["access_type"]
         ):
-            access = None
+            raise TessieError(
+                "Tessie /vehicles has conflicting access fields; report the schema",
+                code="malformed_response",
+            )
         active = item.get("is_active")
         display = state.get("display_name")
+        if (
+            (access is not None and not isinstance(access, str))
+            or (active is not None and not isinstance(active, bool))
+            or (display is not None and not isinstance(display, str))
+            or (car_type is not None and not isinstance(car_type, str))
+        ):
+            raise TessieError(
+                "Tessie /vehicles has malformed row fields; report the schema",
+                code="malformed_response",
+            )
         vin = item["vin"].upper()
         inventory[vin] = LiveVehicle(
             vin=vin,

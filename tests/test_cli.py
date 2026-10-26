@@ -166,7 +166,8 @@ def test_drive_filters_apply_to_drives_and_coordinates_are_stripped(tmp_path: Pa
     assert code == 0
     drives_call = next(c for c in transport.calls if c["path"].endswith("/drives"))
     assert drives_call["query"] == {"from": "1", "to": "2", "tag": "Business"}
-    assert ADDRESS not in out and "starting_saved_location" in out
+    assert ADDRESS not in out
+    assert "starting_saved_location" not in out and "ending_saved_location" not in out
 
 
 def test_drive_filters_on_other_reads_are_a_usage_error(tmp_path: Path) -> None:

@@ -23,7 +23,6 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.lock
 
-      - run: python -m pip install --upgrade pip
       # The hashed lock is compiled from requirements-dev.txt with
       # `uv pip compile requirements-dev.txt --python-version 3.11 --generate-hashes`.
       - run: python -m pip install --require-hashes -r requirements-dev.lock
