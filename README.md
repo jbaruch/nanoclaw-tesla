@@ -13,7 +13,7 @@ Merged source is not an installed plugin and a passing test suite is not a live 
 ## What it guarantees
 
 - **Credential stays in the vault.** The host broker uses the existing normal OneCLI gateway and vaulted Tessie key. Scripts use native IPC; key values never enter containers, logs or chat.
-- **Default deny.** A vehicle is addressable only when listed in the owner's allowlist and Tessie reports it as `OWNER` and active. Shared, `DRIVER` and unnamed vehicles stay out unless the owner marks one `shared`.
+- **Default deny.** The protected host policy selects current non-archived vehicles dynamically from fresh Tessie inventory. Active OWNER and DRIVER vehicles are admitted under that explicit owner predicate; unknown access and archived vehicles are refused. Unnamed vehicles receive stable aliases. Explicit protected lists remain an optional mode.
 - **Chat authorization.** Controls need a control or owner chat; precise location needs an owner chat. The host resolves the registered source directory and enforces protected VIN/role policy on every request; agent-writable allowlists grant nothing.
 - **Reads never wake the car.** Each read probes status and uses Tessie's cache. No wake action exists.
 - **Acceptance is not state.** Tessie's `result: true` is reported as `accepted`; only matching cached state at or after actual host dispatch produces `confirmed`. Failed readback preserves accepted receipts.
@@ -31,7 +31,8 @@ Merged source is not an installed plugin and a passing test suite is not a live 
 | Rule | Purpose |
 | --- | --- |
 | `rules/tessie-credentials.md` | The token lives in the vault; the agent never holds, requests or prints it |
-| `rules/vehicle-allowlist.md` | Only allowlisted OWNER vehicles are addressable |
+| `rules/vehicle-allowlist.md` | Current vehicle access follows the protected dynamic or explicit host predicate |
+| `rules/provider-identity.md` | Provider namespace and declared surfaces remain consistent |
 | `rules/location-privacy.md` | Precise location stays in owner chats |
 | `rules/command-authorization.md` | Controls need an authorized chat, a named plan and a reported outcome |
 | `rules/nanoclaw-skill-root.md` | Command blocks use the container's skill root |
@@ -51,7 +52,7 @@ python -m pyright
 python -m pytest
 ```
 
-The normal commit hook runs pinned Gitleaks source through pre-commit 4.7.0. Keep the hook installed; its upstream SHA renewal cadence lives beside the pin.
+The normal commit hook runs pinned Gitleaks source through pre-commit 4.7.0. Keep the hook installed; Renovate’s enabled pre-commit manager in `renovate.json` renews its source SHA.
 
 Tests use synthetic VINs, a frozen clock and a fake transport; nothing reaches Tessie. `requirements-dev.lock` is compiled from `requirements-dev.txt` with `uv pip compile requirements-dev.txt --python-version 3.11 --generate-hashes -o requirements-dev.lock`.
 

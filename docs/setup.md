@@ -132,8 +132,11 @@ current plan. Consult the [official API index](https://developer.tessie.com/llms
 and account terms before enabling scheduled volume. No unverified price or quota
 is assumed. The fixed foundation routes do not require arbitrary Fleet passthrough.
 
-The broker rechecks live inventory before each vehicle request. One vehicle list
-uses one Tessie call; a normal state read or state-confirmed command uses five.
-The gateway owns credential injection for every provider request.
+The broker rechecks live inventory before each vehicle request. Static explicit
+mode uses one Tessie call for a vehicle list and five for a normal state read or
+state-confirmed command. Dynamic non-archived mode adds one fresh inventory call
+when each CLI invocation loads policy: two for a list and six for a state read or
+state-confirmed command. Preview is a separate invocation. The gateway owns
+credential injection for every provider request.
 A daily watch composes the scripts and multiplies that budget by admitted vehicles.
 Reads keep default cached behavior; no wake or `use_cache=false` route is allowed.

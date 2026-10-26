@@ -1,31 +1,30 @@
 ---
 alwaysApply: true
-description: Only allowlisted OWNER vehicles are addressable; shared and unnamed vehicles stay excluded
+description: Vehicle access follows protected host policy and fresh Tessie inventory
 ---
 
-# Vehicle Allowlist
+# Vehicle Selection
 
-## Default Deny
+## Host Predicate
 
-- A vehicle is addressable only when its VIN is listed in the host-protected `DATA_DIR/tessie-authority/policy.json`
-- The live Tessie row must also report `access_type` `OWNER` and `is_active` true
-- Narrow exception for a vehicle the owner marked `"shared": true` in that file
-- Preconditions (all required):
-  1. The VIN is listed in the allowlist
-  2. The host owner set `shared` on that protected entry
-  3. The VIN appears in Tessie's live inventory
-- Every other vehicle stays excluded, whatever its alias or display name
+- Host-protected `DATA_DIR/tessie-authority/policy.json` version 2 selects `non_archived` or `explicit` mode.
+- `non_archived` is the owner's dynamic opt-in for every current or future active vehicle with recognized native OWNER or DRIVER access.
+- The host derives that admitted set from fresh inventory on each operation.
+- Missing or unknown access and archived vehicles grant no dynamic access.
+- Unnamed vehicles receive stable VIN aliases; duplicate names receive deterministic disambiguation.
+- `explicit` mode requires a protected VIN entry plus current OWNER/active proof, or a protected `shared: true` entry and live presence.
+- Empty chat roles authorize nobody in either mode.
 
-## What the Agent Does
+## Agent Selection
 
-- Pick a vehicle by allowlist alias or by the VIN of an allowlisted vehicle
-- Ask which vehicle when `tessie-ops` reports `selector_required`
-- Never write or edit vehicle/role authority; the host owner maintains it
-- Address a shared or inactive row only under the explicit protected-policy exception above
-- A denied vehicle exits 4 with a `denied_reason`; report it and stop
+- Pick a vehicle using an alias or VIN returned by the host.
+- Ask which vehicle when the script reports `selector_required`.
+- Use the current exact alias/action confirmation printed by the plan.
+- A renamed or archived vehicle requires a fresh authorized plan before any new effect.
+- The host owner maintains protected policy; agent files and role variables grant nothing.
+- A denied vehicle exits 4; report its diagnostic and stop.
 
 ## Discovery
 
-- `tessie-vehicles.py` lists addressable vehicles for any authorized chat
-- The host projects only admitted vehicles; discovery reveals no unlisted vehicles
-- An agent-writable allowlist, role variable or payload chat id grants nothing
+- `tessie-vehicles.py` lists only currently admitted vehicles for an authorized chat.
+- Historical completed receipts never grant a new effect or permit replay.

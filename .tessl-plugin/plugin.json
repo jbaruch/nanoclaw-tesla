@@ -1,7 +1,7 @@
 {
   "name": "jbaruch/nanoclaw-tesla",
   "version": "0.1.0",
-  "description": "Tesla vehicle state and control through the Tessie REST API: deterministic scripts, default-deny vehicle allowlist, owner-chat location privacy, cached reads that never wake a sleeping car, and state-confirmed controls as a NanoClaw per-chat overlay loaded via containerConfig.additionalTiles.",
+  "description": "Deterministic Tessie vehicle reads, confirmed controls and health checks through protected dynamic vehicle policy and the existing OneCLI gateway.",
   "private": false,
   "skills": [
     "skills/tessie-ops",
@@ -12,6 +12,7 @@
     "rules/vehicle-allowlist.md",
     "rules/location-privacy.md",
     "rules/command-authorization.md",
-    "rules/nanoclaw-skill-root.md"
+    "rules/nanoclaw-skill-root.md",
+    "rules/provider-identity.md"
   ]
 }

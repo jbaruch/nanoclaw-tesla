@@ -1,7 +1,6 @@
-# Gitleaks v8.30.1. Maintainer checks upstream releases monthly and renews this
-# source SHA after the staged-secret blocking fixture passes; no scanner owns it.
 repos:
   - repo: https://github.com/gitleaks/gitleaks
-    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
     hooks:
       - id: gitleaks
+        language: golang

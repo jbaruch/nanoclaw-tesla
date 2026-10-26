@@ -52,7 +52,7 @@ Wake, trunks, windows, sunroof, homelink, keyless driving and remote start, boom
 - Field presence differs by model. Live inventory on 2026-10-25 showed `lychee` and `cybertruck` vehicles; fixtures cover both shapes and the scripts read fields defensively
 - Read `vehicle_config` from `tessie-read.py state` before assuming a capability: `can_accept_navigation_requests` (share), `can_actuate_trunks`, `has_seat_cooling`, `motorized_charge_port`
 - Tire pressure needs vehicle firmware 2022.4.5 or newer
-- `access_type` is an unenumerated string in Tessie's schema; only `OWNER` is treated as owned
+- `access_type` is an unenumerated string in Tessie's schema; the host recognizes OWNER and DRIVER for dynamic non-archived selection, and refuses unknown access
 
 ## Unverified until a native handshake
 
@@ -61,5 +61,5 @@ These behaviors are hypothesized from the public reference and stay unproven unt
 - the JSON shape of Tessie error bodies and the headers of a 429
 - whether a command to a `waiting_for_sleep` car still auto-wakes it
 - field differences between `lychee`, `tamarind` and other `car_type` values
-- whether an inactive `DRIVER` vehicle accepts commands (the allowlist excludes it regardless)
+- whether an inactive `DRIVER` vehicle accepts commands (the requested dynamic non-archived mode excludes it)
 - whether Tessie's cached state reflects a command immediately, which decides how often `unconfirmed` appears for a command that worked
