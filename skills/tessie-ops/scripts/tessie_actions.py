@@ -65,8 +65,6 @@ PLAIN_READS = (
 # Reads that are owner-only: the live position itself, and who else can drive.
 OWNER_READS = ("location", "drivers")
 READ_KINDS = (*PLAIN_READS, *OWNER_READS)
-# Reads whose payload embeds coordinates or addresses and so need redaction.
-LOCATION_BEARING_READS = ("state", "drives", "location", "battery", "tire_pressure")
 
 
 @dataclass(frozen=True)
@@ -150,7 +148,7 @@ def read_vehicle(
         return result
     # Cached read: use_cache stays at Tessie's default and no wake is ever sent.
     data = client.get(kind, vin=vehicle.vin, query=query)
-    if kind in LOCATION_BEARING_READS and not include_location:
+    if not include_location:
         data, dropped = redact_location(data)
         result["location_redacted"] = dropped
     result["data"] = data

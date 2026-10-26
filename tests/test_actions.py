@@ -78,6 +78,30 @@ def test_location_is_redacted_unless_explicitly_included() -> None:
     assert str(LAT) in shown and ADDRESS in shown
 
 
+@pytest.mark.parametrize("kind", ["last_idle_state", "consumption_since_charge", "firmware_alerts"])
+def test_all_read_payloads_redact_location_without_explicit_owner_inclusion(kind):
+    transport = standard_transport()
+    payload = {
+        "results": [
+            {
+                "drive_state": {"latitude": LAT, "longitude": LON},
+                "starting_saved_location": "PRIVATE_PLACE",
+                "distance": 5,
+            }
+        ]
+    }
+    transport.routes[("GET", f"/{RUSTLER}/{kind}")] = json_response(payload)
+    client, vehicle = TessieClient(transport), vehicle_for(transport)
+    hidden = read_vehicle(client, vehicle, kind, include_location=False)
+    text = json.dumps(hidden)
+    assert str(LAT) not in text and str(LON) not in text and "PRIVATE_PLACE" not in text
+    assert hidden["data"] == {"results": [{"drive_state": {}, "distance": 5}]}
+    assert hidden["location_redacted"] == 3
+    shown = read_vehicle(client, vehicle, kind, include_location=True)
+    assert shown["data"] == payload
+    assert transport.paths("POST") == []
+
+
 def test_malformed_status_payload_fails_visibly() -> None:
     transport = standard_transport()
     transport.routes[("GET", f"/{RUSTLER}/status")] = json_response({"nope": 1})

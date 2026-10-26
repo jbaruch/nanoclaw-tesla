@@ -114,6 +114,17 @@ def test_read_state_from_a_sleeping_car_uses_cache_and_redacts(tmp_path: Path) -
     assert transport.paths("POST") == []
 
 
+@pytest.mark.parametrize("chat", [OWNER_CHAT, READ_CHAT])
+def test_idle_snapshot_is_redacted_on_the_actual_cli_without_the_location_flag(tmp_path, chat):
+    transport = standard_transport()
+    transport.routes[("GET", f"/{RUSTLER}/last_idle_state")] = json_response(state_payload())
+    code, out, err, transport = run(reader, ["last_idle_state"], tmp_path, transport, chat=chat)
+    assert code == 0 and err == ""
+    assert str(LAT) not in out and ADDRESS not in out
+    assert parse(out)["data"]["vehicle_state"]["locked"] is True
+    assert transport.paths("POST") == []
+
+
 def test_include_location_needs_an_owner_chat(tmp_path: Path) -> None:
     code, out, err, transport = run(
         reader, ["state", "--include-location"], tmp_path, chat=CONTROL_CHAT
