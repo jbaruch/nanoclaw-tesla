@@ -82,8 +82,9 @@ provider call, browser action, grant change or vehicle operation.
 ## Overlay installation
 
 Run `tessl install jbaruch/nanoclaw-tesla`, then load bare overlay name
-`nanoclaw-tesla` through an authorized non-main chat's
-`containerConfig.additionalTiles`. Restart that chat through the canonical host
+`nanoclaw-tesla` through a protected owner-authorized chat's
+`containerConfig.additionalTiles`. Use the existing owner main chat when that is
+the registered owner chat; a separate chat is not required. Restart that chat through the canonical host
 workflow after installation. Preserve the actual registered native chat IDs.
 A merged PR or synthetic test is not proof of an installed producer/consumer.
 

@@ -5,7 +5,7 @@ description: "Reads and controls the owner's Tesla vehicles through the Tessie R
 
 # Tessie Ops
 
-This skill is an action router: choose the entry step matching the user's intent and follow its explicit continuation. Do not run unrelated steps or parallelize.
+This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
 Every Tessie call is one of the scripts below. Their docstrings own arguments, output shape and exit codes; this skill names which script serves which intent. Production scripts use the version-1 native host broker; missing authority denies without HTTP fallback. Protected host policy grants vehicle/chat access. The existing OneCLI gateway injects the vaulted key; never ask for or print a token (`rules/tessie-credentials.md`). Exit 4 means the allowlist or chat authorization denied the request: report the `denied_reason` and stop. Any other non-zero exit: report the stderr diagnostic and stop.
 

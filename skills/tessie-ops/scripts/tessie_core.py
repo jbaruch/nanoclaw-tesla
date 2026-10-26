@@ -231,10 +231,16 @@ def failure_for(response: HttpResponse) -> TessieError:
     elif 300 <= status < 400:
         message = (
             f"Tessie answered with a redirect (HTTP {status}); redirects are refused so the "
-            "injected credential cannot leave api.tessie.com"
+            "injected credential cannot leave api.tessie.com. Stop and ask the host owner "
+            "to inspect the existing Tessie gateway/route; never automatically replay an "
+            "uncertain control"
         )
     else:
-        message = f"Tessie returned an unexpected status (HTTP {status})"
+        message = (
+            f"Tessie returned an unexpected status (HTTP {status}). Stop and ask the host "
+            "owner to inspect the existing Tessie gateway/route; never automatically "
+            "replay an uncertain control"
+        )
     return TessieError(
         message,
         code=f"http_{status}",
