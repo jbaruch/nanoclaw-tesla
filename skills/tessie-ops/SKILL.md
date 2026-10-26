@@ -7,6 +7,14 @@ description: "Reads and controls the owner's Tesla vehicles through the Tessie R
 
 This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
+Dynamic arguments use the co-shipped `scripts/tessie-argv.py` encoded input contract.
+Use a structured file-write tool to write each step's JSON `{script, argv}` to
+`/tmp/tessie-argv-input.json` in this chat's container. Run the co-shipped encoder
+below and use its JSON `base64url` field as `<BASE64URL>`. Only `[A-Za-z0-9_-]`
+enters the execution command;
+never insert raw aliases, destinations, tags or confirmation text into shell source.
+The adapter preserves the selected CLI's output and exit contract.
+
 Every Tessie call is one of the scripts below. Their docstrings own arguments, output shape and exit codes; this skill names which script serves which intent. Production scripts use the version-1 native host broker; missing authority denies without HTTP fallback. Protected host policy grants vehicle/chat access. The existing OneCLI gateway injects the vaulted key; never ask for or print a token (`rules/tessie-credentials.md`). Exit 4 means the allowlist or chat authorization denied the request: report the `denied_reason` and stop. Any other non-zero exit: report the stderr diagnostic and stop.
 
 ## Step 1 — List Vehicles
@@ -25,8 +33,11 @@ Use when the user asks about the setup or why a vehicle is refused. Finish here.
 
 ```bash
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-allowlist.py show
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-allowlist.py resolve --vehicle "<alias>"
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-allowlist"`, `argv: ["resolve", "--vehicle", alias]`. Every argv value is a string.
 
 Only the host owner edits the protected policy (`docs/setup.md`). Agent state and role variables grant nothing.
 
@@ -35,8 +46,11 @@ Only the host owner edits the protected policy (`docs/setup.md`). Agent state an
 Use for battery, charging, climate, locks, tires, firmware alerts, idle drain or drive history. Finish here.
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-read.py <kind> --vehicle "<alias>"
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-read"`, `argv: [kind, "--vehicle", alias]`. Every argv value is a string.
 
 `<kind>` is `status`, `state`, `battery`, `tire_pressure`, `firmware_alerts`, `consumption_since_charge`, `last_idle_state` or `drives`. The read uses Tessie's cache and never wakes the car; if `vehicle_status` is not `awake`, say the data comes from cache. Omit `--vehicle` to use the default vehicle; ask the user when the script reports `selector_required`.
 
@@ -45,8 +59,11 @@ python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-read.py <kind
 Use only in an owner chat and only when the user asks where the car is. Finish here.
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-read.py location --include-location --vehicle "<alias>"
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-read"`, `argv: ["location", "--include-location", "--vehicle", alias]`. Every argv value is a string.
 
 Follow `rules/location-privacy.md`: never repeat coordinates or addresses outside an owner chat. A denied location read is final; do not look for the position in other output.
 
@@ -55,8 +72,11 @@ Follow `rules/location-privacy.md`: never repeat coordinates or addresses outsid
 Use when an owner asks who can drive the vehicle. Finish here.
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-read.py drivers --vehicle "<alias>"
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-read"`, `argv: ["drivers", "--vehicle", alias]`. Every argv value is a string.
 
 Drivers are owner-only. Exit 4 is final; report it and stop.
 
@@ -65,16 +85,22 @@ Drivers are owner-only. Exit 4 is final; report it and stop.
 Use for every control request, before Step 7. Show the user the plan.
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py <action> --vehicle "<alias>" --dry-run
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-command"`, `argv: [action, "--vehicle", alias, "--dry-run"] plus the action parameters`. Every argv value is a string.
 
 `<action>` is `lock`, `unlock`, `start_climate`, `stop_climate`, `set_temperatures` (`--temperature`), `start_charging`, `stop_charging`, `set_charge_limit` (`--percent`), `share` (`--value`) or `flash`. State the vehicle (alias and VIN suffix) and the action to the user. Destination sharing also requires an owner chat; the script refuses other chats before a plan or effect. Proceed immediately to Step 7 when the user's request already authorizes that action on that vehicle. Otherwise finish here and wait for the missing authorization.
 
 ## Step 7 — Run A Control
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py <action> --vehicle "<alias>" --confirm "<alias>:<action>"
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-command"`, `argv: [action, "--vehicle", alias, "--confirm", confirm_with] plus the same action parameters`. Every argv value is a string.
 
 Pass the same parameters as Step 6 and the `confirm_with` phrase the plan printed. Report the `status` field:
 
@@ -90,8 +116,11 @@ Never retry on your own. Finish here.
 Use when the user asks whether an earlier control took effect. Finish here.
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-confirm.py <action> --since <sent_at_epoch> --vehicle "<alias>"
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-confirm"`, `argv: [action, "--since", sent_at_epoch, "--vehicle", alias] plus any required temperature/percent`. Every argv value is a string.
 
 Pass the earlier control's `sent_at_epoch` (unix seconds), plus `--temperature` or `--percent` when the action took one. Missing or failed confirmation retains known acceptance; never resend it automatically.
 
@@ -103,8 +132,11 @@ original request already authorizes those drive IDs, tag and vehicle. Otherwise
 finish here and wait for the missing authorization.
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py set_drive_tag --drives "<ids>" --tag "<tag>" --vehicle "<alias>" --dry-run
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-command"`, `argv: ["set_drive_tag", "--drives", ids, "--tag", tag, "--vehicle", alias, "--dry-run"]`. Every argv value is a string.
 
 ## Step 10 — Apply Drive Tags
 
@@ -112,7 +144,10 @@ Use after the preview has been shown and the user's request authorizes those
 drive IDs, tag and vehicle. Pass the exact `confirm_with` phrase from the plan.
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py set_drive_tag --drives "<ids>" --tag "<tag>" --vehicle "<alias>" --confirm "<alias>:set_drive_tag"
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE64URL>
 ```
+
+Encoded input: `script: "tessie-command"`, `argv: ["set_drive_tag", "--drives", ids, "--tag", tag, "--vehicle", alias, "--confirm", confirm_with]`. Every argv value is a string.
 
 Report the accepted/refused result and finish here. Never replay uncertainty.

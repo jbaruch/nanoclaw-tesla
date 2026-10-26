@@ -25,6 +25,7 @@ This foundation check is not a Tesla2-7 feature; those skills compose the same
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -105,7 +106,12 @@ def alerts_for(alias: str, state: dict[str, Any], threshold: int) -> list[dict[s
     charge = data.get("charge_state") if isinstance(data, dict) else None
     level = charge.get("battery_level") if isinstance(charge, dict) else None
     charging = charge.get("charging_state") if isinstance(charge, dict) else None
-    if isinstance(level, bool) or not isinstance(level, (int, float)):
+    if (
+        isinstance(level, bool)
+        or not isinstance(level, (int, float))
+        or not 0 <= level <= 100
+        or not math.isfinite(level)
+    ):
         return [
             {"alias": alias, "kind": "state_incomplete", "missing": "charge_state.battery_level"}
         ]

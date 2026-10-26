@@ -29,3 +29,9 @@ description: Controls run only from authorized chats, name the vehicle and actio
 - Require state timestamps at or after actual host dispatch
 - Never retry an unconfirmed or uncertain control on your own
 - Never wake a vehicle to make a read fresher
+
+## Literal Arguments
+
+- Pass dynamic aliases, destinations, tags and confirmation text through the bounded `tessie-argv.py` base64url JSON contract
+- Never interpolate raw provider/user strings into shell source; the adapter invokes a closed co-shipped script with literal argv and no shell
+- Encoding grants no authority and preserves every native role, vehicle and exact-confirmation check

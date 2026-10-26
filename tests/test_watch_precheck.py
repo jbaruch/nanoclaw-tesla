@@ -231,3 +231,16 @@ def test_unexpected_errors_fail_open_with_a_wake(
     assert payload["data"]["reason"] == "precheck_error"
     assert "RuntimeError" in payload["data"]["error"]
     assert "bug" in captured.err
+
+
+@pytest.mark.parametrize("level", [-1, 101, float("nan"), float("inf"), -float("inf"), True])
+def test_invalid_battery_percentage_wakes_with_state_incomplete(level):
+    runner = Scripted(states={"The Rustler": state_reply(level, "Disconnected")})
+    payload = precheck.evaluate(runner, OPS)
+    assert payload["wake_agent"] is True
+    assert any(
+        alert["alias"] == "The Rustler"
+        and alert["kind"] == "state_incomplete"
+        and alert["missing"] == "charge_state.battery_level"
+        for alert in payload["data"]["alerts"]
+    )

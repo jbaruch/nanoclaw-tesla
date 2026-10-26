@@ -132,7 +132,7 @@ def test_transport_carries_fixed_request_and_host_dispatch_time_without_headers(
             }
 
     ipc = IPC()
-    transport = NativeTransport(ipc)  # type: ignore[arg-type] — fixture supplies only call()
+    transport = NativeTransport(ipc, now=lambda: NOW)  # type: ignore[arg-type] — fixture supplies only call()
     transport.confirmation = "Synthetic car:lock"
     result = transport.send(
         "POST",
@@ -195,3 +195,31 @@ def test_unsupported_host_policy_is_actionable_without_echoing_peer_data(tmp_pat
     assert "host owner" in str(error.value)
     assert "PRIVATE_SENTINEL" not in str(error.value)
     assert len(observed) == 1
+
+
+@pytest.mark.parametrize("host_stamp", [NOW - 1, 1e300, 10**1000, float("inf"), float("nan")])
+def test_invalid_host_dispatch_proof_preserves_accepted_result(tmp_path, host_stamp):
+    class IPC:
+        def __init__(self):
+            self.posts = 0
+
+        def call(self, payload, timeout):
+            assert payload["method"] == "POST"
+            self.posts += 1
+            return {
+                "schema_version": 1,
+                "status": 200,
+                "data": {"result": True},
+                "dispatched_at_epoch": host_stamp,
+            }
+
+    ipc = IPC()
+    transport = NativeTransport(ipc, now=lambda: NOW)  # type: ignore[arg-type] — closed call-only fixture
+    client = TessieClient(transport)
+    rt, _, _ = make_runtime(tmp_path, chat=OWNER_CHAT, transport=standard_transport())
+    vehicle = resolve(rt.client, rt.load(), "The Rustler")
+    outcome = run_command(client, vehicle, "lock", {}, max_attempts=1, now=lambda: NOW)
+    assert outcome["tessie_result"] is True
+    assert outcome["status"] == "unconfirmed"
+    assert outcome["reason"] == "host_dispatch_time_unavailable"
+    assert ipc.posts == 1

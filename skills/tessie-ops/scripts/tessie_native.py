@@ -16,6 +16,7 @@ import time
 import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -159,8 +160,11 @@ class NativeTransport:
 
     host_authority = True
 
-    def __init__(self, ipc: NativeIPC | None = None) -> None:
+    def __init__(
+        self, ipc: NativeIPC | None = None, *, now: Callable[[], float] = time.time
+    ) -> None:
         self.ipc = ipc if ipc is not None else NativeIPC()
+        self.now = now
         self.confirmation: str | None = None
 
     def policy(self) -> object:
@@ -192,13 +196,18 @@ class NativeTransport:
             "body": json.loads(body) if body is not None else None,
             "confirmation": self.confirmation if method == "POST" else None,
         }
+        enqueued_at = self.now()
         reply = self.ipc.call(payload, timeout + 45)
         stamp = reply.get("dispatched_at_epoch")
-        if (
-            isinstance(stamp, bool)
-            or not isinstance(stamp, (int, float))
-            or not math.isfinite(stamp)
-            or stamp < 0
-        ):
+        if isinstance(stamp, bool) or not isinstance(stamp, (int, float)) or stamp < enqueued_at:
             stamp = None
+        if stamp is not None:
+            try:
+                # A bad proof must not erase a known accepted command result.
+                if not math.isfinite(stamp):
+                    stamp = None
+                else:
+                    datetime.fromtimestamp(stamp, UTC)
+            except (OverflowError, OSError, ValueError):
+                stamp = None
         return HttpResponse(reply["status"], {}, json.dumps(reply["data"]).encode("utf-8"), stamp)

@@ -18,8 +18,10 @@ refused (exit 4) and nothing is sent. The command goes out once with
 `wait_for_completion=true` and `--max-attempts` (1..3, default 3, Tessie's own retry).
 Wake is not a supported action, but Tessie may wake a sleeping car to run a control.
 
-Stdout (JSON): {"vehicle", "action", "params", "tessie_result", "status", ...} where
-status is confirmed | accepted | unconfirmed | failed. `{"result": true}` from Tessie is
+Stdout (JSON): a dry run has status=planned, vehicle, action, params and
+confirm_with; it has no tessie_result because no command was dispatched.
+An effect result has vehicle, action, params, tessie_result and status
+confirmed | accepted | unconfirmed | failed. `{"result": true}` from Tessie is
 acceptance only; "confirmed" needs a fresh cached readback of the changed field.
 A failed readback preserves tessie_result=true and the command receipt, returns
 unconfirmed with safe confirmation_error metadata, and never retries the control.
