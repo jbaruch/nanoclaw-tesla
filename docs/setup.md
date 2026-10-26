@@ -1,98 +1,120 @@
 # Setup
 
-How to connect the `nanoclaw-tesla` overlay to Tessie, authorize vehicles and chats, verify the install, revoke access and recover from failures. This repository ships the plugin; the allowlist contents, the chat that loads the overlay and the install itself are owner decisions made on the NanoClaw host.
+The native host owns authorization and provider access. Install the published host
+Tessie authority and its matching `jbaruch/nanoclaw` producer before enabling this
+overlay. Source delivery does not claim installation or live vehicle acceptance.
 
-## 1. Tessie access token
+## Protected host policy
 
-- Create the token at <https://dash.tessie.com/settings/api>. Tessie authenticates with one access token sent as `Authorization: Bearer <token>`
-- Store it only in the OneCLI vault as the secret named `Tessie API token`: type `generic`, host pattern `api.tessie.com`, header `Authorization`
-- The vault secret for this NanoClaw already exists (id `5269dc31-7972-4197-854c-0601e8354b1a`, created 2026-10-21). Reuse it; request no second token
-- The OneCLI gateway injects the header on the wire. The scripts send no `Authorization` header and refuse token query parameters, so the token never reaches a container, a log or the chat
-- Never put the token in `.env`, `.env.example`, a compose file or this repository
+The host owner provisions `DATA_DIR/tessie-authority` as a real host-owned `0700`
+directory, with an empty host-owned `.agent-empty` directory at `0555`. NanoClaw
+masks the entire private directory from agent mounts and project aliases even
+when the broker is disabled. Unsafe existing storage blocks agent startup.
 
-## 2. Vehicle allowlist
-
-Default deny: with no allowlist file, no vehicle is addressable and every script exits 4.
-
-Create `/workspace/state/tessie-ops/allowlist.json` (mode 0600, owned by the agent identity):
+The host owner creates `policy.json` at `0600`, with this schema. The empty
+example authorizes nobody; use actual existing native credential/chat/VIN IDs
+only during the separately authorized owner provisioning step.
 
 ```json
 {
   "schema_version": 1,
-  "default_vehicle": "The Rustler",
-  "owner_chats": ["<chat id of your private owner chat>"],
+  "owner_chats": [],
   "control_chats": [],
   "read_chats": [],
-  "watch": {"low_battery_percent": 20},
-  "vehicles": [
-    {"vin": "<17-character VIN>", "alias": "The Rustler"},
-    {"vin": "<17-character VIN>", "alias": "Bradbury"}
-  ]
+  "vehicles": [],
+  "default_vehicle": null,
+  "low_battery_percent": 20
 }
 ```
 
-- A vehicle is addressable when its VIN is listed and Tessie's live row reports `access_type` `OWNER` and `is_active` true
-- Vehicles other owners shared with the account (`DRIVER`, `null` access, inactive) stay excluded. Set `"shared": true` on a listed entry only when you want a non-owner vehicle addressable
-- `default_vehicle` is optional; with two addressable vehicles and no default, scripts ask for `--vehicle`
-- `owner_chats` may read, control and see precise location; `control_chats` may read and control; `read_chats` may read non-location data. A chat in no list is denied everything
-- The chat id is the registered chat's `NANOCLAW_CHAT_JID` value, as the host provides it to that chat's container
-- `watch.low_battery_percent` is optional; the daily `tessie-watch` check uses it (default in `skills/tessie-watch/scripts/tessie-precheck.py`)
+Each vehicle has exactly `vin`, `alias`, and boolean `shared`. VINs and normalized
+aliases are unique. Default vehicle is a listed alias or null. The host requires
+live `last_state.access_type: OWNER` and `is_active: true`; an explicit protected
+`shared: true` entry also admits the same VIN from live inventory. Unlisted
+vehicles never appear in the native discovery projection.
 
-Check it from an authorized chat:
+Owner chats may read precise location and drivers. Control chats may read the
+host's non-location projection and control listed vehicles. Read chats cannot
+control. Source-group registration determines the native chat identity; flags,
+conversation claims, process variables and agent-writable files grant nothing.
+The scripts' additional init-environment witness can refuse a request but cannot
+grant access the host denies. Legacy scratch allowlists are not production inputs.
 
-```bash
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-allowlist.py show
-python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-vehicles.py --include-denied
-```
+## Existing OneCLI credential proxy
 
-### Hardening
+Reuse the existing OneCLI-vaulted generic Tessie API key for `api.tessie.com`.
+The normal OneCLI gateway injects its `Authorization` header. The host broker
+uses that existing route; scripts use native IPC. Key values never enter
+container files, host request bodies, logs or chat. No additional Tessie token,
+OneCLI identity, grant migration or credential provisioning variable is needed
+when this key and gateway are already configured.
 
-- The scripts treat the allowlist as read-only owner configuration. It sits in `/workspace/state`, which every container can write, so an agent that can run shell commands can edit its own authorization file
-- Chat identity is read from the container's init environment, which a command line cannot override. The roles it selects still come from this file
-- Keep the file owner-managed on the host and mount it read-only where your NanoClaw deployment allows. Until then, treat control and location authorization as only as strong as that mount
+For a new installation only, the host owner creates a Tessie token at
+<https://dash.tessie.com/settings/api> and stores it in OneCLI as a generic
+secret for `api.tessie.com`, header `Authorization`. Never paste its value into
+chat or this repository. Preserve the existing configured key on this system.
 
-## 3. Load the overlay on a chat
+The host owner provisions the requested protected VIN/chat policy, enables the
+default-disabled domain feature (`TESSIE_ENABLED=true`), and deploys the reviewed
+producer through the canonical NanoClaw workflow. Missing gateway configuration
+fails without direct HTTP fallback. This source task performs no deployment,
+provider call, browser action, grant change or vehicle operation.
 
-- The overlay loads per chat through `containerConfig.additionalTiles` with the bare name `nanoclaw-tesla`
-- NanoClaw's `manage-groups` refuses `set_additional_tiles` on the main chat, so use an owner chat that is not main, then nuke that chat so it picks the overlay up
-- Install the published plugin on the NAS with `tessl` before that. A merged pull request is not an installed plugin
+## Overlay installation
 
-## 4. Verify
+Install the published plugin with Tessl and load bare overlay name
+`nanoclaw-tesla` through an authorized non-main chat's
+`containerConfig.additionalTiles`. Restart that chat through the canonical host
+workflow after installation. Preserve the actual registered native chat IDs.
+A merged PR or synthetic test is not proof of an installed producer/consumer.
 
-From a read-capable chat:
+## Command and failure semantics
 
-1. `tessie-vehicles.py` lists your allowlisted vehicles by alias and VIN suffix
-2. `tessie-read.py state --vehicle "<alias>"` returns `vehicle_status` and cached data; on a sleeping car `from_cache` is true and nothing wakes it
-3. `tessie-command.py lock --vehicle "<alias>" --dry-run` prints the plan and sends nothing
+Scripts emit a plan before controls and require `--confirm "<alias>:<action>"`.
+The host independently checks role, VIN, current live access, fixed route,
+parameters and the selected alias/action. It never exposes raw provider errors,
+credentials, proxy configuration or unknown response fields to non-owner chats.
 
-A live control test is a separate owner-authorized step: pick the vehicle, send a reversible command only when status is `awake`, and read the state back.
+Before POST dispatch the host fsyncs a private command intent. The same native
+request ID cannot replay a timed-out, torn or unknown command after restart.
+Duplicate completed requests retain their prior accepted/refused receipt.
+Commands have no automatic retry loop; Tessie's own bounded `max_attempts` is
+explicit. An IPC timeout may mean the command was sent. Inspect cached state;
+do not resend it automatically or report definite non-application.
 
-## 5. Revoke
+`result: true` is acceptance. `confirmed` requires matching state whose timestamp
+is at or after actual host dispatch, with no pre-command grace period. A stale,
+mismatched or failed readback retains the accepted receipt and returns
+`unconfirmed` with exit 3. Missing host dispatch proof also remains unconfirmed.
+Flash, share and drive tags report acceptance without state confirmation.
 
-- Delete the token at <https://dash.tessie.com/settings/api>. Every script then exits 1 with an HTTP 401 diagnostic
-- Remove the `Tessie API token` secret from the OneCLI vault
-- Remove a vehicle from the allowlist to stop addressing it, or remove the whole file to deny everything
+| Failure | Required response |
+| --- | --- |
+| exit 4 / native contract or policy unavailable | Owner inspects installed contract, registration, protected policy and existing gateway; do not create scratch grants |
+| HTTP 401 | Owner repairs the existing vaulted credential; never request a duplicate token in chat |
+| HTTP 403/404 | Owner verifies account/vehicle access; cached inventory may have changed |
+| HTTP 408/429/5xx | Stop; inspect status or wait for an explicit later request; no looping |
+| timeout / uncertain / unconfirmed | Keep known acceptance, read cached state, never automatically replay |
 
-## 6. Recovery
+Revocation removes the protected VIN/chat entry, disables the broker, or revokes
+the existing vault credential. Preserve command intents while resolving uncertain
+operations. No retention/erasure action is implicit in this setup guide.
 
-| Symptom | Meaning | Fix |
-| --- | --- | --- |
-| exit 4, `allowlist_missing` | no allowlist file | create it as in section 2 |
-| exit 4, `chat_unauthorized` | chat id is in no list | add it to `owner_chats`, `control_chats` or `read_chats` |
-| exit 4, `chat_unwitnessed` | the host chat id could not be read from the init environment | report it; controls and location stay denied |
-| exit 4, `not_owner_access` or `inactive` | Tessie reports the vehicle as shared or inactive | fix access in the Tessie app, or set `shared` deliberately |
-| HTTP 401 | token missing, expired or revoked | create a new token, update the vault secret |
-| HTTP 403 | token cannot reach the vehicle | check the vehicle's access in the Tessie app |
-| HTTP 404 | vehicle gone from the account | re-run `tessie-vehicles.py --include-denied` |
-| HTTP 408 | Tessie timed out reaching the car | read cached status; do not loop |
-| HTTP 429 | rate limit | stop; the diagnostic carries `Retry-After` when Tessie sends it |
-| HTTP 5xx | Tessie failed upstream | try again later; no retry is attempted |
-| control `unconfirmed` | Tessie accepted it; fresh state does not show the change | read state again later; do not report it as done |
+## Live acceptance and cost
 
-## Usage limits and cost
+The host owner separately verifies installed producer/consumer bytes, actual
+role denial, cached sleeping-car reads and one explicitly authorized reversible
+control on a selected awake vehicle. Verify fresh post-command state and no
+location outside the owner chat. Confirm the daily `tessie-watch` cadence row in
+native `scheduled_tasks`. Until those checks pass, issue #1 remains open.
 
-- Tessie's published API reference (OpenAPI, 2026-10-25) lists success responses only: no error schemas, no rate limits and no price table. This repository states no figure it could not verify
-- Check <https://tessie.com> for current plan and API terms before relying on volume
-- Call budget per operation, so a plan's quota can be sized: a read is three requests (`/vehicles`, `/status`, the data endpoint); a control is three (`/vehicles`, the command, `/state`); `tessie-vehicles.py` is one
-- The daily `tessie-watch` check costs 1 request plus 3 per addressable vehicle
-- Reads never ask Tessie for a live (`use_cache=false`) copy and never wake a vehicle. Tessie may wake a sleeping car to run a control; see `docs/command-surface.md`
+Tessie pricing, account quota and Fleet passthrough availability depend on the
+current plan. Consult the [official API index](https://developer.tessie.com/llms.txt)
+and account terms before enabling scheduled volume. No unverified price or quota
+is assumed. The fixed foundation routes do not require arbitrary Fleet passthrough.
+
+The broker rechecks live inventory before each vehicle request. One vehicle list
+uses one Tessie call; a normal state read or state-confirmed command uses five.
+The gateway owns credential injection for every provider request.
+A daily watch composes the scripts and multiplies that budget by admitted vehicles.
+Reads keep default cached behavior; no wake or `use_cache=false` route is allowed.

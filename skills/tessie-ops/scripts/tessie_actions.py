@@ -325,6 +325,9 @@ def run_command(
         )
     sent_at = now()
     reply = client.command(op, vin=vehicle.vin, params=params, max_attempts=max_attempts)
+    host_sent_at = client.last_dispatch_epoch
+    if host_sent_at is not None:
+        sent_at = host_sent_at
     accepted = reply.get("result") if isinstance(reply, dict) else None
     if not isinstance(accepted, bool):
         raise TessieError(
@@ -343,6 +346,9 @@ def run_command(
     if not accepted:
         outcome["status"] = "failed"
         outcome["reason"] = "tessie_result_false"
+        return outcome
+    if client.host_authority and host_sent_at is None:
+        outcome.update(status="unconfirmed", reason="host_dispatch_time_unavailable")
         return outcome
     try:
         outcome.update(confirm_state(client, vehicle, op, params, since_epoch=sent_at))

@@ -1,10 +1,8 @@
-"""Runtime wiring shared by the tessie-*.py CLIs.
+"""CLI wiring with native host authority and explicitly injectable fixtures.
 
-`Runtime` carries everything a CLI touches outside its own arguments — the HTTP
-client, the allowlist path, the chat-identity witness, the clock and the
-streams — so tests substitute all of it and production uses the defaults.
-Neither the allowlist path nor the witness path is reachable from a command
-line or an environment variable.
+Production loads policy through host IPC. An unavailable native contract never
+falls back to an agent-writable file or direct HTTP. Tests explicitly inject a
+transport, policy path, identity witness, clock and streams.
 """
 
 from __future__ import annotations
@@ -23,6 +21,7 @@ from tessie_policy import (
     Allowlist,
     authorize,
     load_allowlist,
+    parse_allowlist,
 )
 
 
@@ -37,6 +36,8 @@ class Runtime:
     err: TextIO = field(default_factory=lambda: sys.stderr)
 
     def load(self) -> Allowlist:
+        if self.client.host_authority:
+            return parse_allowlist(self.client.host_policy())
         return load_allowlist(self.allowlist_path)
 
     def authorize(self, allowlist: Allowlist, minimum: str, purpose: str) -> str:

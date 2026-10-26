@@ -1,8 +1,10 @@
 """Shared Tessie REST client, error model and location redaction.
 
 Imported by the `tessie-*.py` CLIs in this directory and nothing else; it is
-a library, not an entry point. Every outbound request goes through
-`TessieClient`, which:
+a library, not an entry point. Every request goes through
+`TessieClient`. Its production transport is native host IPC without HTTP fallback.
+The host enforces protected VIN/chat policy and uses the existing normal OneCLI gateway.
+The client:
 
 - talks only to `TESSIE_BASE_URL` over fixed route templates — no caller
   supplies a URL, host or path;
@@ -110,6 +112,7 @@ class HttpResponse:
     status: int
     headers: Mapping[str, str]
     body: bytes
+    dispatched_at_epoch: float | None = None
 
 
 class Transport(Protocol):
@@ -139,7 +142,7 @@ def make_opener(proxy_handler: urllib.request.ProxyHandler | None = None):
 
 
 class UrllibTransport:
-    """Stdlib transport. The system proxy (OneCLI gateway) is honoured by the opener."""
+    """Explicit synthetic/loopback fixture adapter; never selected by Runtime defaults."""
 
     def __init__(self, opener: urllib.request.OpenerDirector | None = None) -> None:
         self._opener = opener if opener is not None else make_opener()
@@ -267,7 +270,29 @@ class TessieClient:
     """Single-attempt Tessie REST client over fixed routes."""
 
     def __init__(self, transport: Transport | None = None) -> None:
-        self._transport: Transport = transport if transport is not None else UrllibTransport()
+        if transport is None:
+            from tessie_native import NativeTransport
+
+            transport = NativeTransport()
+        self._transport: Transport = transport
+        self.last_dispatch_epoch: float | None = None
+
+    @property
+    def host_authority(self) -> bool:
+        return getattr(self._transport, "host_authority", False) is True
+
+    def host_policy(self) -> object:
+        from tessie_native import NativeTransport
+
+        if not isinstance(self._transport, NativeTransport):
+            raise TessieError("Native host policy is required", code="host_contract")
+        return self._transport.policy()
+
+    def confirm_selection(self, confirmation: str) -> None:
+        from tessie_native import NativeTransport
+
+        if isinstance(self._transport, NativeTransport):
+            self._transport.confirmation = confirmation
 
     def _build(self, route: str, vin: str | None, query: Mapping[str, object] | None) -> str:
         if "{vin}" in route:
@@ -306,6 +331,7 @@ class TessieClient:
             if name.lower() in FORBIDDEN_HEADERS:
                 raise TessieError("internal error: forbidden header", code="forbidden_header")
         response = self._transport.send(method, url, body=body, headers=headers, timeout=timeout)
+        self.last_dispatch_epoch = response.dispatched_at_epoch
         if not 200 <= response.status < 300:
             raise failure_for(response)
         try:

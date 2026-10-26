@@ -1,40 +1,12 @@
-"""Vehicle allowlist, chat authorization and vehicle selection for tessie-ops.
+"""Vehicle selection and role presentation from the native host policy projection.
 
-Default deny. A vehicle is addressable only when ALL of these hold:
+Production Runtime loads this schema from `tessie_request` IPC. The host owns
+protected VIN/chat policy, verifies source-group identity and enforces every
+provider request independently. Agent scratch files grant no authority.
 
-1. its VIN is listed in the allowlist file (`ALLOWLIST_PATH`);
-2. Tessie's live inventory reports `access_type == "OWNER"` and `is_active is true`,
-   unless the owner set `"shared": true` on that listed VIN;
-3. the calling chat holds a role that permits the operation.
-
-Chat identity is witnessed, not claimed. `NANOCLAW_CHAT_JID` is passed by the
-host as a container `-e` variable, so it lives in the init process
-environment (`WITNESS_ENVIRON_PATH`), which an agent cannot rewrite from a
-command line the way it can rewrite its own process environment. The witness
-read wins; a process-environment value that disagrees with it is a refusal,
-and an unreadable witness denies everything.
-
-Roles come from the owner-written allowlist file, never from a flag:
-
-- `owner_chats`   — reads, controls, precise location, drivers list
-- `control_chats` — non-location reads and controls
-- `read_chats`    — non-location reads
-
-Allowlist file (schema_version 1) at `/workspace/state/tessie-ops/allowlist.json`:
-
-    {
-      "schema_version": 1,
-      "default_vehicle": "The Rustler",            (optional alias)
-      "owner_chats": ["tg:-100..."],
-      "control_chats": [],
-      "read_chats": [],
-      "watch": {"low_battery_percent": 20},        (optional)
-      "vehicles": [{"vin": "...", "alias": "The Rustler", "shared": false}]
-    }
-
-The file is owner configuration, read-only to every script here. It lives in
-agent-writable state, so it is only as trustworthy as that mount (see
-docs/setup.md, Hardening).
+The local file loader remains only for explicitly injected synthetic runtimes.
+It is never a fallback when native authority is unavailable. Chat witnessing and
+selection here provide additional client-side refusal, not host authorization.
 """
 
 from __future__ import annotations
@@ -324,7 +296,13 @@ def parse_inventory(payload: object) -> dict[str, LiveVehicle]:
         state = last_state if isinstance(last_state, dict) else {}
         config = state.get("vehicle_config")
         car_type = config.get("car_type") if isinstance(config, dict) else None
-        access = item.get("access_type")
+        access = state.get("access_type", item.get("access_type"))
+        if (
+            "access_type" in state
+            and "access_type" in item
+            and state["access_type"] != item["access_type"]
+        ):
+            access = None
         active = item.get("is_active")
         display = state.get("display_name")
         vin = item["vin"].upper()

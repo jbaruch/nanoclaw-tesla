@@ -108,8 +108,10 @@ def main(argv: Sequence[str] | None = None, *, runtime: Runtime | None = None) -
                 exit_code=EXIT_DENIED,
             )
         if is_tag:
+            rt.client.confirm_selection(expected)
             outcome = run_drive_tag(rt.client, vehicle, drives=args.drives, tag=args.tag)
         else:
+            rt.client.confirm_selection(expected)
             outcome = run_command(
                 rt.client,
                 vehicle,

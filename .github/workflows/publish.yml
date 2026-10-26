@@ -31,3 +31,7 @@ jobs:
       TESSL_TOKEN: ${{ secrets.TESSL_TOKEN }}
     with:
       stamp-changelog: true
+      # Canonical credit-outage carve-out: only the actual out-of-credits
+      # signature skips, with every affected skill flagged by the provider.
+      # Threshold85 and all non-credit failures remain mandatory.
+      skill-review-credit-outage: skip

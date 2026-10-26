@@ -7,7 +7,7 @@ description: "Reads and controls the owner's Tesla vehicles through the Tessie R
 
 This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
-Every Tessie call is one of the scripts below. Their docstrings own arguments, output shape and exit codes; this skill names which script serves which intent. Credentials come from the OneCLI gateway; never ask for or print a token (`rules/tessie-credentials.md`). Exit 4 means the allowlist or chat authorization denied the request: report the `denied_reason` and stop. Any other non-zero exit: report the stderr diagnostic and stop.
+Every Tessie call is one of the scripts below. Their docstrings own arguments, output shape and exit codes; this skill names which script serves which intent. Production scripts use the version-1 native host broker; missing authority denies without HTTP fallback. Protected host policy grants vehicle/chat access. The existing OneCLI gateway injects the vaulted key; never ask for or print a token (`rules/tessie-credentials.md`). Exit 4 means the allowlist or chat authorization denied the request: report the `denied_reason` and stop. Any other non-zero exit: report the stderr diagnostic and stop.
 
 ## Step 1 — List Vehicles
 
@@ -17,7 +17,7 @@ Use when the user asks which vehicles are available. Finish here.
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-vehicles.py
 ```
 
-Add `--include-denied` in an owner chat to see why a Tessie vehicle is not addressable. Contract: `scripts/tessie-vehicles.py` docstring.
+The host returns admitted vehicles only. An owner may add `--include-denied` for client-side explanations within that projection. Contract: `scripts/tessie-vehicles.py` docstring.
 
 ## Step 2 — Check The Allowlist
 
@@ -28,7 +28,7 @@ python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-allowlist.py 
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-allowlist.py resolve --vehicle "<alias>"
 ```
 
-Only the owner edits the allowlist (`docs/setup.md`). Never write it.
+Only the host owner edits the protected policy (`docs/setup.md`). Agent state and role variables grant nothing.
 
 ## Step 3 — Read Vehicle State
 
@@ -83,7 +83,7 @@ Use when the user asks whether an earlier control took effect. Finish here.
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-confirm.py <action> --since <sent_at_epoch> --vehicle "<alias>"
 ```
 
-Pass the earlier control's `sent_at_epoch` (unix seconds), plus `--temperature` or `--percent` when the action took one.
+Pass the earlier control's `sent_at_epoch` (unix seconds), plus `--temperature` or `--percent` when the action took one. Missing or failed confirmation retains known acceptance; never resend it automatically.
 
 ## Step 8 — Tag Drives
 

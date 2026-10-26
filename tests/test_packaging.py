@@ -89,7 +89,7 @@ def test_dev_lock_pins_exactly_what_requirements_dev_declares() -> None:
 def test_env_example_documents_the_vault_secret_and_holds_no_token() -> None:
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
     assert "Tessie API token" in text and "dash.tessie.com/settings/api" in text
-    assert "FLEET_DISPATCH_TOKEN=" in text
+    assert "FLEET_DISPATCH_TOKEN=" not in text
     for line in text.splitlines():
         if "=" in line and not line.startswith("#"):
             assert line.split("=", 1)[1] == "", f"placeholder value in {line.split('=')[0]}"
@@ -125,6 +125,7 @@ def test_workflows_reference_files_the_repo_ships() -> None:
     assert re.search(r"publish-plugin\.yml@[0-9a-f]{40}", publish)
     assert "stamp-changelog: true" in publish
     assert (ROOT / ".github" / "fleet-review-enabled").is_file()
-    assert (ROOT / ".github" / "workflows" / "review-trigger.yml").is_file()
+    workflows = ROOT / ".github" / "workflows"
+    assert all("FLEET_DISPATCH_TOKEN" not in path.read_text() for path in workflows.glob("*.yml"))
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "Unreleased" not in changelog

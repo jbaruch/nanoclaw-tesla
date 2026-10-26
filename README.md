@@ -12,11 +12,11 @@ Merged source is not an installed plugin and a passing test suite is not a live 
 
 ## What it guarantees
 
-- **Credential stays in the vault.** The OneCLI gateway injects the Tessie token for `api.tessie.com`. Scripts send no `Authorization` header, accept no URL or token argument, and refuse redirects.
+- **Credential stays in the vault.** The host broker uses the existing normal OneCLI gateway and vaulted Tessie key. Scripts use native IPC; key values never enter containers, logs or chat.
 - **Default deny.** A vehicle is addressable only when listed in the owner's allowlist and Tessie reports it as `OWNER` and active. Shared, `DRIVER` and unnamed vehicles stay out unless the owner marks one `shared`.
-- **Chat authorization.** Controls need a control or owner chat; precise location needs an owner chat. The chat id comes from the host-provided container environment, not from a flag the agent passes.
+- **Chat authorization.** Controls need a control or owner chat; precise location needs an owner chat. The host resolves the registered source directory and enforces protected VIN/role policy on every request; agent-writable allowlists grant nothing.
 - **Reads never wake the car.** Each read probes status and uses Tessie's cache. No wake action exists.
-- **Acceptance is not state.** Tessie's `result: true` is reported as `accepted`; only a fresh cached state readback produces `confirmed`.
+- **Acceptance is not state.** Tessie's `result: true` is reported as `accepted`; only matching cached state at or after actual host dispatch produces `confirmed`. Failed readback preserves accepted receipts.
 - **Bounded retries.** One request per call; controls ask Tessie for at most 3 attempts. HTTP 429, 408 and 5xx fail with a diagnostic instead of looping.
 
 ## Skills
@@ -52,4 +52,4 @@ python -m pytest
 
 Tests use synthetic VINs, a frozen clock and a fake transport; nothing reaches Tessie. `requirements-dev.lock` is compiled from `requirements-dev.txt` with `uv pip compile requirements-dev.txt --python-version 3.11 --generate-hashes -o requirements-dev.lock`.
 
-Set the `FLEET_DISPATCH_TOKEN` and `TESSL_TOKEN` repository secrets before the review and publish workflows run (`.env.example`).
+The owner enrolls this repository in the existing central review GitHub App. Publication uses the repository `TESSL_TOKEN` secret; never create a broad review token or store CI credentials in `.env`.

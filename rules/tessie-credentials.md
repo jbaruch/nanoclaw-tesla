@@ -8,8 +8,11 @@ description: Tessie credentials live in the OneCLI vault; the agent never holds,
 ## Where the Credential Lives
 
 - The Tessie access token lives in the OneCLI vault as secret `Tessie API token`, host pattern `api.tessie.com`
+- The host broker uses the existing normal OneCLI gateway route
+- Reuse the configured Tessie key without creating another credential or identity
 - The OneCLI gateway injects `Authorization` on the wire; no container holds the token
-- Scripts under `skills/tessie-ops/scripts/` set no `Authorization` header and pass no token query parameter
+- Scripts under `skills/tessie-ops/scripts/` use version-1 native IPC
+- Missing host authority denies the operation without direct HTTP fallback
 
 ## What the Agent Does
 
