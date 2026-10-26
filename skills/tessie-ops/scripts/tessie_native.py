@@ -128,6 +128,15 @@ class NativeIPC:
                             code="journal_version",
                             exit_code=EXIT_DENIED,
                         )
+                    if isinstance(error, dict) and error.get("code") == "policy_version":
+                        raise TessieError(
+                            "Tessie protected policy version is unsupported. Keep the feature "
+                            "disabled and ask the host owner to preserve the prior file and "
+                            "provision the installed policy schema; "
+                            "never rewrite it from an agent.",
+                            code="policy_version",
+                            exit_code=EXIT_DENIED,
+                        )
                     # Native diagnostics are intentionally not echoed; never
                     # allow a malformed peer body to expose a credential/path.
                     raise unavailable("host_denied")

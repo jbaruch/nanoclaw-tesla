@@ -12,12 +12,13 @@ masks the entire private directory from agent mounts and project aliases even
 when the broker is disabled. Unsafe existing storage blocks agent startup.
 
 The host owner creates `policy.json` at `0600`, with this schema. The empty
-example authorizes nobody; use actual existing native credential/chat/VIN IDs
+example authorizes nobody; use actual existing native chat/VIN IDs
 only during the separately authorized owner provisioning step.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "vehicle_selection": "non_archived",
   "owner_chats": [],
   "control_chats": [],
   "read_chats": [],
@@ -27,11 +28,24 @@ only during the separately authorized owner provisioning step.
 }
 ```
 
-Each vehicle has exactly `vin`, `alias`, and boolean `shared`. VINs and normalized
-aliases are unique. Default vehicle is a listed alias or null. The host requires
-live `last_state.access_type: OWNER` and `is_active: true`; an explicit protected
-`shared: true` entry also admits the same VIN from live inventory. Unlisted
-vehicles never appear in the native discovery projection.
+The requested `non_archived` mode is dynamic: keep protected `vehicles` empty and
+`default_vehicle` null. Every new operation derives the current list from fresh
+Tessie inventory with actual `is_active: true` and recognized native OWNER or
+DRIVER access. Active shared vehicles are included by this explicit owner opt-in;
+archived vehicles are excluded. New or unarchived vehicles appear on the next
+request without editing policy. Unknown access never grants authority.
+
+Aliases use current native display names, a stable VIN fallback for unnamed
+vehicles, and deterministic VIN disambiguation for duplicates. A rename requires
+the current exact alias in control confirmation. A completed receipt is historical
+readback and remains readable without provider I/O; it sends no new command.
+
+Optional `explicit` selection retains individually protected entries with exactly
+`vin`, normalized `alias`, and boolean `shared`, plus a listed default alias or
+null. Non-shared entries require current OWNER/active proof; explicit shared
+entries still require live presence. This static mode does not implement the
+owner's requested dynamic list. Unsupported protected policy versions refuse
+with an owner-repair diagnostic; agents never migrate or rewrite the private file.
 
 Owner chats may read precise location and drivers. Control chats may read the
 host's non-location projection and control listed vehicles. Read chats cannot

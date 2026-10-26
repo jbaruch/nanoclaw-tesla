@@ -181,3 +181,17 @@ def test_confirmation_never_uses_pre_queue_client_time(tmp_path, host_stamp, rea
     assert outcome["status"] == "unconfirmed"
     assert outcome["reason"] == reason
     assert len(fake.paths("POST")) == 1
+
+
+def test_unsupported_host_policy_is_actionable_without_echoing_peer_data(tmp_path):
+    ipc, observed = ipc_fixture(
+        tmp_path,
+        {"schema_version": 1, "error": {"code": "policy_version", "message": "PRIVATE_SENTINEL"}},
+    )
+    with pytest.raises(TessieError) as error:
+        ipc.call("policy", 1)
+    assert error.value.code == "policy_version"
+    assert "Keep the feature disabled" in str(error.value)
+    assert "host owner" in str(error.value)
+    assert "PRIVATE_SENTINEL" not in str(error.value)
+    assert len(observed) == 1
