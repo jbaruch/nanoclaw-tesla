@@ -119,6 +119,15 @@ class NativeIPC:
                     raise unavailable("host_contract")
                 error = parsed.get("error")
                 if error is not None:
+                    if isinstance(error, dict) and error.get("code") == "journal_version":
+                        raise TessieError(
+                            "Tessie command journal version is unsupported. "
+                            "Update the host reader for the retained schema; "
+                            "preserve the existing intent and inspect cached vehicle state. "
+                            "Never delete the journal or replay the prior command.",
+                            code="journal_version",
+                            exit_code=EXIT_DENIED,
+                        )
                     # Native diagnostics are intentionally not echoed; never
                     # allow a malformed peer body to expose a credential/path.
                     raise unavailable("host_denied")

@@ -88,6 +88,20 @@ def test_timeout_enqueues_only_once_and_has_no_http_fallback(tmp_path):
     assert len(list((tmp_path / "tasks").iterdir())) == 1
 
 
+def test_unsupported_host_journal_is_actionable_without_echoing_peer_data(tmp_path):
+    ipc, observed = ipc_fixture(
+        tmp_path,
+        {"schema_version": 1, "error": {"code": "journal_version", "message": "PRIVATE_SENTINEL"}},
+    )
+    with pytest.raises(TessieError) as error:
+        ipc.call({"synthetic": "control"}, 1)
+    assert error.value.code == "journal_version"
+    assert "Update the host reader" in str(error.value)
+    assert "Never delete the journal or replay" in str(error.value)
+    assert "PRIVATE_SENTINEL" not in str(error.value)
+    assert len(observed) == 1
+
+
 def test_default_client_cannot_read_agent_writable_policy_or_fall_back(monkeypatch, tmp_path):
     # Even a permissive local file cannot replace a missing host contract.
     scratch = tmp_path / "allowlist.json"
