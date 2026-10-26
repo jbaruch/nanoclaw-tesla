@@ -1,0 +1,61 @@
+# Exclude repo-only files from the published Tessl plugin per
+# `jbaruch/coding-policy: context-artifacts`.
+#
+# The plugin ships: .tessl-plugin/plugin.json, README.md, CHANGELOG.md,
+# rules/, skills/ and docs/. Everything below is dev / CI / runtime
+# state that has no place in the published artifact.
+
+# CI / build / test infrastructure
+.github/
+tests/
+pyproject.toml
+pyrightconfig.json
+requirements-dev.txt
+requirements-dev.lock
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Repo hygiene files
+.gitignore
+.gitattributes
+.env
+.env.local
+/.env.example
+
+# Tessl consumer-side install state. `tessl.json` is committed (it is the
+# manifest, not install state) but has no place in a consumer's checkout.
+/.tessl
+/tessl.json
+.claude/
+.agents/
+.codex/
+.gemini/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+.github/skills/
+
+# Internal Herdr orchestration metadata is repo-only.
+.herdr/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Development hooks and updater configuration
+.pre-commit-config.yaml
+renovate.json
