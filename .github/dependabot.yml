@@ -1,8 +1,21 @@
+# Renewal mechanism for pinned dependencies, per
+# `jbaruch/coding-policy: dependency-management` (every pinned dependency needs
+# a stated, automated renewal mechanism). Dependabot opens a weekly PR when a
+# newer pytest / ruff / pyright, GitHub Action or the pinned coding-policy
+# workflow is released; the CI gate (ruff + pyright + pytest) on each PR is the
+# acceptance check for the bump. A pip bump is followed by re-compiling
+# requirements-dev.lock (see .github/workflows/test.yml).
 version: 2
 updates:
-  - package-ecosystem: github-actions
-    directory: /
+  - package-ecosystem: "pip"
+    directory: "/"
     schedule:
-      interval: weekly
+      interval: "weekly"
     commit-message:
-      prefix: chore(ci)
+      prefix: "chore(deps)"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(ci)"

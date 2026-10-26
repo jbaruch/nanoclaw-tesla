@@ -1,0 +1,413 @@
+"""End-to-end through the shipped CLI scripts with a fake transport."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from support import (
+    ADDRESS,
+    CONTROL_CHAT,
+    LAT,
+    NOW,
+    OWNER_CHAT,
+    POWERSLAVE,
+    READ_CHAT,
+    RUSTLER,
+    STRANGER_CHAT,
+    allowlist_document,
+    json_response,
+    load_script,
+    make_runtime,
+    standard_transport,
+    state_payload,
+)
+from tessie_core import HttpResponse, TessieError
+
+vehicles = load_script("tessie-ops", "tessie-vehicles")
+allowlist_cli = load_script("tessie-ops", "tessie-allowlist")
+reader = load_script("tessie-ops", "tessie-read")
+command = load_script("tessie-ops", "tessie-command")
+confirm = load_script("tessie-ops", "tessie-confirm")
+
+
+def run(module, argv, tmp_path: Path, transport=None, **kwargs):
+    transport = transport or standard_transport()
+    runtime, out, err = make_runtime(tmp_path, transport, **kwargs)
+    code = module.main(argv, runtime=runtime)
+    return code, out.getvalue(), err.getvalue(), transport
+
+
+def parse(text: str) -> dict:
+    return json.loads(text)
+
+
+# --- tessie-vehicles -----------------------------------------------------------------
+
+
+def test_vehicles_lists_only_addressable_cars_without_coordinates(tmp_path: Path) -> None:
+    code, out, _, _ = run(vehicles, [], tmp_path, chat=READ_CHAT)
+    payload = parse(out)
+    assert code == 0
+    assert [v["alias"] for v in payload["vehicles"]] == ["The Rustler", "Bradbury"]
+    assert "denied" not in payload
+    assert str(LAT) not in out and RUSTLER not in out
+
+
+def test_denied_listing_is_owner_only(tmp_path: Path) -> None:
+    code, out, _, _ = run(vehicles, ["--include-denied"], tmp_path, chat=OWNER_CHAT)
+    denied = parse(out)["denied"]
+    assert code == 0
+    assert {r["alias_or_suffix"] for r in denied} >= {"Powerslave", "Blue Rocket"}
+    assert POWERSLAVE not in out and str(LAT) not in out
+    code, out, err, _ = run(vehicles, ["--include-denied"], tmp_path, chat=CONTROL_CHAT)
+    assert (code, out) == (4, "")
+    assert "owner" in err
+
+
+def test_unknown_chat_gets_nothing(tmp_path: Path) -> None:
+    transport = standard_transport()
+    code, out, err, transport = run(vehicles, [], tmp_path, transport, chat=STRANGER_CHAT)
+    assert (code, out) == (4, "")
+    assert "not authorized" in err
+    assert transport.calls == []  # denied before any request
+
+
+# --- tessie-allowlist ----------------------------------------------------------------
+
+
+def test_allowlist_show_hides_chat_ids_and_full_vins(tmp_path: Path) -> None:
+    code, out, _, transport = run(allowlist_cli, ["show"], tmp_path, chat=READ_CHAT)
+    assert code == 0
+    assert OWNER_CHAT not in out and RUSTLER not in out
+    assert parse(out)["vehicles"][0] == {
+        "alias": "The Rustler",
+        "vin_suffix": "1832",
+        "shared": False,
+    }
+    assert transport.calls == []
+
+
+def test_allowlist_resolve_denies_a_driver_car_with_a_reason(tmp_path: Path) -> None:
+    doc = allowlist_document(
+        vehicles=[{"vin": POWERSLAVE, "alias": "Powerslave"}], default_vehicle=None
+    )
+    code, out, err, _ = run(
+        allowlist_cli, ["resolve", "--vehicle", "Powerslave"], tmp_path, document=doc
+    )
+    assert (code, out) == (4, "")
+    assert "not_owner_access" in err
+
+
+# --- tessie-read ---------------------------------------------------------------------
+
+
+def test_read_state_from_a_sleeping_car_uses_cache_and_redacts(tmp_path: Path) -> None:
+    transport = standard_transport(status="asleep")
+    code, out, _, transport = run(reader, ["state"], tmp_path, transport, chat=READ_CHAT)
+    payload = parse(out)
+    assert code == 0
+    assert payload["vehicle_status"] == "asleep" and payload["from_cache"] is True
+    assert str(LAT) not in out and ADDRESS not in out
+    assert transport.paths("POST") == []
+
+
+@pytest.mark.parametrize("chat", [OWNER_CHAT, READ_CHAT])
+def test_idle_snapshot_is_redacted_on_the_actual_cli_without_the_location_flag(tmp_path, chat):
+    transport = standard_transport()
+    transport.routes[("GET", f"/{RUSTLER}/last_idle_state")] = json_response(state_payload())
+    code, out, err, transport = run(reader, ["last_idle_state"], tmp_path, transport, chat=chat)
+    assert code == 0 and err == ""
+    assert str(LAT) not in out and ADDRESS not in out
+    assert parse(out)["data"]["vehicle_state"]["locked"] is True
+    assert transport.paths("POST") == []
+
+
+def test_include_location_needs_an_owner_chat(tmp_path: Path) -> None:
+    code, out, err, transport = run(
+        reader, ["state", "--include-location"], tmp_path, chat=CONTROL_CHAT
+    )
+    assert (code, out) == (4, "")
+    assert "owner" in err
+    assert transport.calls == []
+    code, out, _, _ = run(reader, ["state", "--include-location"], tmp_path, chat=OWNER_CHAT)
+    assert code == 0 and str(LAT) in out
+
+
+@pytest.mark.parametrize(
+    ("kind", "include", "fields"),
+    [
+        ("status", False, {"vehicle", "kind", "vehicle_status", "from_cache"}),
+        (
+            "state",
+            False,
+            {"vehicle", "kind", "vehicle_status", "from_cache", "data", "location_redacted"},
+        ),
+        ("state", True, {"vehicle", "kind", "vehicle_status", "from_cache", "data"}),
+    ],
+)
+def test_reader_json_contract_field_presence(tmp_path, kind, include, fields):
+    args = [kind, *(["--include-location"] if include else [])]
+    code, out, err, _ = run(reader, args, tmp_path, chat=OWNER_CHAT)
+    assert code == 0 and err == ""
+    assert set(parse(out)) == fields
+
+
+def test_location_read_requires_the_flag_and_an_owner_chat(tmp_path: Path) -> None:
+    code, out, err, _ = run(reader, ["location"], tmp_path, chat=OWNER_CHAT)
+    assert (code, out) == (4, "") and "--include-location" in err
+    code, out, err, _ = run(reader, ["location", "--include-location"], tmp_path, chat=CONTROL_CHAT)
+    assert (code, out) == (4, "")
+    code, out, _, _ = run(reader, ["location", "--include-location"], tmp_path, chat=OWNER_CHAT)
+    assert code == 0 and ADDRESS in out
+
+
+def test_a_claimed_owner_chat_in_the_command_environment_cannot_grant_location(
+    tmp_path: Path,
+) -> None:
+    code, out, err, transport = run(
+        reader,
+        ["location", "--include-location"],
+        tmp_path,
+        chat=STRANGER_CHAT,
+        env={"NANOCLAW_CHAT_JID": OWNER_CHAT},
+    )
+    assert (code, out) == (4, "")
+    assert "disagrees" in err
+    assert transport.calls == []
+
+
+def test_drivers_read_is_owner_only(tmp_path: Path) -> None:
+    code, _, _, _ = run(reader, ["drivers"], tmp_path, chat=CONTROL_CHAT)
+    assert code == 4
+    code, out, _, _ = run(reader, ["drivers"], tmp_path, chat=OWNER_CHAT)
+    assert code == 0 and "Synthetic Driver" in out
+
+
+def test_drive_filters_apply_to_drives_and_coordinates_are_stripped(tmp_path: Path) -> None:
+    code, out, _, transport = run(
+        reader,
+        ["drives", "--from", "1", "--to", "2", "--tag", "Business"],
+        tmp_path,
+        chat=READ_CHAT,
+    )
+    assert code == 0
+    drives_call = next(c for c in transport.calls if c["path"].endswith("/drives"))
+    assert drives_call["query"] == {"from": "1", "to": "2", "tag": "Business"}
+    assert ADDRESS not in out
+    assert "starting_saved_location" not in out and "ending_saved_location" not in out
+
+
+def test_drive_filters_on_other_reads_are_a_usage_error(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as caught:
+        run(reader, ["state", "--tag", "x"], tmp_path)
+    assert caught.value.code == 2
+
+
+def test_http_failure_prints_a_diagnostic_and_no_stdout(tmp_path: Path) -> None:
+    transport = standard_transport()
+    transport.routes[("GET", f"/{RUSTLER}/status")] = json_response({}, status=401)
+    code, out, err, _ = run(reader, ["state"], tmp_path, transport)
+    assert (code, out) == (1, "")
+    assert "401" in err and "docs/setup.md, Recovery" in err
+    assert "existing" in err and "create a new token" not in err
+
+
+# --- tessie-command ------------------------------------------------------------------
+
+
+def test_dry_run_prints_the_plan_and_sends_no_post(tmp_path: Path) -> None:
+    code, out, _, transport = run(command, ["lock", "--dry-run"], tmp_path, chat=CONTROL_CHAT)
+    payload = parse(out)
+    assert code == 0 and payload["status"] == "planned"
+    assert payload["confirm_with"] == "The Rustler:lock"
+    assert payload["vehicle"] == {"alias": "The Rustler", "vin_suffix": "1832"}
+    assert transport.paths("POST") == []
+
+
+def test_command_without_the_echoed_confirmation_is_refused(tmp_path: Path) -> None:
+    code, out, err, transport = run(command, ["lock"], tmp_path, chat=CONTROL_CHAT)
+    assert (code, out) == (4, "")
+    assert '--confirm "The Rustler:lock"' in err
+    assert transport.paths("POST") == []
+    code, out, _, transport = run(
+        command, ["lock", "--confirm", "Bradbury:lock"], tmp_path, chat=CONTROL_CHAT
+    )
+    assert code == 4 and transport.paths("POST") == []
+
+
+@pytest.mark.parametrize(
+    "phrase", ["the rustler:LOCK", " The Rustler:lock", "The  Rustler:lock", "The Rustler:lock "]
+)
+def test_confirmation_is_the_literal_plan_phrase(tmp_path, phrase):
+    code, out, err, transport = run(
+        command, ["lock", "--confirm", phrase], tmp_path, chat=CONTROL_CHAT
+    )
+    assert code == 4 and out == ""
+    assert "confirmation" in err
+    assert transport.paths("POST") == []
+
+
+@pytest.mark.parametrize("chat", [CONTROL_CHAT, READ_CHAT])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_destination_sharing_refuses_nonowner_chats_without_echoing_the_address(
+    tmp_path, chat, dry_run
+):
+    args = ["share", "--value", ADDRESS, "--confirm", "The Rustler:share"]
+    if dry_run:
+        args.append("--dry-run")
+    code, out, err, transport = run(command, args, tmp_path, chat=chat)
+    assert code == 4 and out == ""
+    assert ADDRESS not in err
+    assert transport.calls == []
+
+
+def test_owner_can_share_a_destination_with_exact_authorized_confirmation(tmp_path):
+    code, out, err, transport = run(
+        command,
+        ["share", "--value", ADDRESS, "--confirm", "The Rustler:share"],
+        tmp_path,
+        chat=OWNER_CHAT,
+    )
+    assert code == 0 and err == ""
+    assert parse(out)["status"] == "accepted"
+    assert transport.paths("POST") == [f"/{RUSTLER}/command/share"]
+
+
+def test_read_chats_cannot_control_a_vehicle(tmp_path: Path) -> None:
+    code, out, err, transport = run(
+        command, ["lock", "--confirm", "The Rustler:lock"], tmp_path, chat=READ_CHAT
+    )
+    assert (code, out) == (4, "")
+    assert transport.calls == []
+
+
+def test_confirmed_lock_end_to_end(tmp_path: Path) -> None:
+    transport = standard_transport(state=state_payload(locked=True, stamp_s=NOW + 1))
+    code, out, _, transport = run(
+        command,
+        ["lock", "--confirm", "The Rustler:lock", "--max-attempts", "1"],
+        tmp_path,
+        transport,
+        chat=CONTROL_CHAT,
+    )
+    payload = parse(out)
+    assert code == 0
+    assert (payload["status"], payload["tessie_result"]) == ("confirmed", True)
+    assert payload["max_attempts"] == 1
+    assert RUSTLER not in out
+    post = next(c for c in transport.calls if c["method"] == "POST")
+    assert post["path"] == f"/{RUSTLER}/command/lock"
+    assert post["query"]["wait_for_completion"] == "true"
+
+
+def test_unconfirmed_control_exits_nonzero_with_json_and_a_warning(tmp_path: Path) -> None:
+    transport = standard_transport(state=state_payload(locked=False, stamp_s=NOW + 1))
+    code, out, err, _ = run(
+        command, ["lock", "--confirm", "The Rustler:lock"], tmp_path, transport, chat=OWNER_CHAT
+    )
+    assert code == 3
+    assert parse(out)["status"] == "unconfirmed"
+    assert "do not report it as done" in err
+
+
+@pytest.mark.parametrize("failure", ["http_500", "malformed_response", "timeout", "network"])
+def test_confirmation_failure_keeps_known_acceptance_and_refuses_automatic_replay(
+    tmp_path: Path, failure: str
+) -> None:
+    transport = standard_transport()
+    if failure == "http_500":
+        readback = json_response({"private": "confirmation-private-sentinel"}, status=500)
+    elif failure == "malformed_response":
+        readback = HttpResponse(200, {}, b"confirmation-private-sentinel")
+    else:
+
+        def unavailable() -> HttpResponse:
+            raise TessieError("confirmation-private-sentinel", code=failure)
+
+        readback = unavailable
+    transport.routes[("GET", f"/{RUSTLER}/state")] = readback
+    code, out, err, transport = run(
+        command, ["lock", "--confirm", "The Rustler:lock"], tmp_path, transport, chat=OWNER_CHAT
+    )
+    result = parse(out)
+    assert code == 3
+    assert result["tessie_result"] is True
+    assert result["status"] == "unconfirmed"
+    assert result["reason"] == "confirmation_unavailable"
+    assert result["confirmation_error"]["code"] == failure
+    assert result["sent_at_epoch"] == NOW
+    assert result["action"] == "lock" and result["vehicle"]["alias"] == "The Rustler"
+    assert len(transport.paths("POST")) == 1
+    assert transport.paths("GET").count(f"/{RUSTLER}/state") == 1
+    assert "do not report it as done or retry automatically" in err
+    assert "confirmation-private-sentinel" not in out + err
+
+
+def test_result_false_exits_one(tmp_path: Path) -> None:
+    transport = standard_transport(command_result=False)
+    code, out, err, _ = run(
+        command, ["lock", "--confirm", "The Rustler:lock"], tmp_path, transport, chat=OWNER_CHAT
+    )
+    assert code == 1 and parse(out)["status"] == "failed"
+    assert "result false" in err
+
+
+def test_parameter_errors_are_caught_before_any_request(tmp_path: Path) -> None:
+    code, out, err, transport = run(
+        command,
+        ["set_charge_limit", "--percent", "20", "--confirm", "The Rustler:set_charge_limit"],
+        tmp_path,
+        chat=OWNER_CHAT,
+    )
+    assert (code, out) == (1, "") and "50..100" in err
+    assert transport.calls == []
+
+
+def test_unsupported_actions_are_rejected_by_argparse(tmp_path: Path) -> None:
+    for action in ("wake", "honk", "remote_start", "open_charge_port"):
+        with pytest.raises(SystemExit) as caught:
+            run(command, [action], tmp_path)
+        assert caught.value.code == 2
+
+
+def test_drive_tag_goes_through_the_same_confirmation(tmp_path: Path) -> None:
+    code, _, _, transport = run(
+        command, ["set_drive_tag", "--drives", "10001"], tmp_path, chat=CONTROL_CHAT
+    )
+    assert code == 4 and transport.paths("POST") == []
+    code, out, _, _ = run(
+        command,
+        [
+            "set_drive_tag",
+            "--drives",
+            "10001",
+            "--tag",
+            "Business",
+            "--confirm",
+            "The Rustler:set_drive_tag",
+        ],
+        tmp_path,
+        chat=CONTROL_CHAT,
+    )
+    assert code == 0 and parse(out)["status"] == "accepted"
+
+
+# --- tessie-confirm ------------------------------------------------------------------
+
+
+def test_confirm_reports_stale_state_as_unconfirmed(tmp_path: Path) -> None:
+    transport = standard_transport(state=state_payload(locked=True, stamp_s=NOW - 600))
+    code, out, _, transport = run(
+        confirm, ["lock", "--since", str(NOW)], tmp_path, transport, chat=READ_CHAT
+    )
+    assert code == 3 and parse(out)["reason"] == "stale_state"
+    assert transport.paths("POST") == []
+
+
+def test_confirm_requires_since(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as caught:
+        run(confirm, ["lock"], tmp_path)
+    assert caught.value.code == 2

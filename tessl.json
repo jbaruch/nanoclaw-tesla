@@ -1,0 +1,9 @@
+{
+  "name": "nanoclaw-tesla",
+  "mode": "managed",
+  "dependencies": {
+    "jbaruch/coding-policy": {
+      "version": "0.5.10"
+    }
+  }
+}
