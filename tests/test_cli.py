@@ -24,6 +24,7 @@ from support import (
     standard_transport,
     state_payload,
 )
+from tessie_core import HttpResponse, TessieError
 
 vehicles = load_script("tessie-ops", "tessie-vehicles")
 allowlist_cli = load_script("tessie-ops", "tessie-allowlist")
@@ -240,6 +241,39 @@ def test_unconfirmed_control_exits_nonzero_with_json_and_a_warning(tmp_path: Pat
     assert code == 3
     assert parse(out)["status"] == "unconfirmed"
     assert "do not report it as done" in err
+
+
+@pytest.mark.parametrize("failure", ["http_500", "malformed_response", "timeout", "network"])
+def test_confirmation_failure_keeps_known_acceptance_and_refuses_automatic_replay(
+    tmp_path: Path, failure: str
+) -> None:
+    transport = standard_transport()
+    if failure == "http_500":
+        readback = json_response({"private": "confirmation-private-sentinel"}, status=500)
+    elif failure == "malformed_response":
+        readback = HttpResponse(200, {}, b"confirmation-private-sentinel")
+    else:
+
+        def unavailable() -> HttpResponse:
+            raise TessieError("confirmation-private-sentinel", code=failure)
+
+        readback = unavailable
+    transport.routes[("GET", f"/{RUSTLER}/state")] = readback
+    code, out, err, transport = run(
+        command, ["lock", "--confirm", "The Rustler:lock"], tmp_path, transport, chat=OWNER_CHAT
+    )
+    result = parse(out)
+    assert code == 3
+    assert result["tessie_result"] is True
+    assert result["status"] == "unconfirmed"
+    assert result["reason"] == "confirmation_unavailable"
+    assert result["confirmation_error"]["code"] == failure
+    assert result["sent_at_epoch"] == NOW
+    assert result["action"] == "lock" and result["vehicle"]["alias"] == "The Rustler"
+    assert len(transport.paths("POST")) == 1
+    assert transport.paths("GET").count(f"/{RUSTLER}/state") == 1
+    assert "do not report it as done or retry automatically" in err
+    assert "confirmation-private-sentinel" not in out + err
 
 
 def test_result_false_exits_one(tmp_path: Path) -> None:

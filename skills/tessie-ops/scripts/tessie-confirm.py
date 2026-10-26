@@ -7,7 +7,7 @@ Usage: tessie-confirm.py ACTION --since EPOCH [--vehicle ALIAS_OR_VIN]
 ACTION: lock, unlock, start_climate, stop_climate, set_temperatures,
 start_charging, stop_charging, set_charge_limit. `--since` is the unix time the
 control was sent (tessie-command.py prints it as sent_at_epoch); a state section older
-than that, less the freshness slack, is stale and reads `unconfirmed`.
+than that is stale and reads `unconfirmed`; pre-command state never confirms.
 
 Stdout (JSON): {"vehicle", "action", "status", "reason", "field", "expected",
 "observed", "state_timestamp"}. One cached `GET /vehicles` and `GET /state`; no wake.

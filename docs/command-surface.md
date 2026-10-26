@@ -37,7 +37,7 @@ What the `tessie-ops` scripts support, what they refuse, and the vehicle limits 
 
 - Controls need a control or owner chat, the allowlist, a `--dry-run` plan and a `--confirm "<alias>:<action>"` echo
 - Each control sends once with `wait_for_completion=true` and `max_attempts` at most 3; the client adds no retry
-- Outcomes: `confirmed`, `accepted`, `unconfirmed` (exit 3), `failed` (exit 1). Tessie's `{"result": true}` is acceptance. `confirmed` needs a cached state read whose changed field matches and whose section timestamp is not older than the send time less a short slack
+- Outcomes: `confirmed`, `accepted`, `unconfirmed` (exit 3), `failed` (exit 1). Tessie's `{"result": true}` is acceptance. `confirmed` needs a cached state read whose changed field matches and whose valid section timestamp is at least the command send time; a matching pre-command state never confirms. If the separate readback fails, the result retains the accepted command receipt with `status: unconfirmed`, safe error category metadata and a no-automatic-retry diagnostic
 - Tessie documents automatic wake-up and firmware-error handling for controls, so a control may wake a sleeping car even though the overlay never calls wake
 
 ## Unsupported

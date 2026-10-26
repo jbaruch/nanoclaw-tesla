@@ -20,6 +20,8 @@ Wake is not a supported action, but Tessie may wake a sleeping car to run a cont
 Stdout (JSON): {"vehicle", "action", "params", "tessie_result", "status", ...} where
 status is confirmed | accepted | unconfirmed | failed. `{"result": true}` from Tessie is
 acceptance only; "confirmed" needs a fresh cached readback of the changed field.
+A failed readback preserves tessie_result=true and the command receipt, returns
+unconfirmed with safe confirmation_error metadata, and never retries the control.
 Exit codes: 0 confirmed/accepted/planned, 1 failed, 3 unconfirmed, 4 denied.
 """
 
@@ -124,7 +126,8 @@ def main(argv: Sequence[str] | None = None, *, runtime: Runtime | None = None) -
         if status == "unconfirmed":
             rt.err.write(
                 f"tessie: {args.action} was accepted but the vehicle state did not confirm it "
-                f"({outcome.get('reason')}); do not report it as done\n"
+                f"({outcome.get('reason')}); do not report it as done or retry automatically. "
+                "Inspect cached state before a new explicit request.\n"
             )
             return EXIT_UNCONFIRMED
         return EXIT_OK

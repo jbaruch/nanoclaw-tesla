@@ -18,6 +18,7 @@ command was accepted, so the outcome is one of:
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -40,8 +41,6 @@ from tessie_policy import (
     select_vehicle,
 )
 
-# A state section older than the command by more than this is stale evidence.
-FRESHNESS_SLACK_SECONDS = 15
 TEMPERATURE_TOLERANCE_C = 0.5
 CHARGE_LIMIT_RANGE = (50, 100)
 TEMPERATURE_RANGE_C = (15.0, 28.0)
@@ -225,10 +224,19 @@ def _section_timestamp(state: Mapping[str, Any], section: str) -> float | None:
     stamp = body.get("timestamp") if isinstance(body, dict) else None
     if isinstance(stamp, bool) or not isinstance(stamp, (int, float)):
         return None
-    return float(stamp) / 1000.0  # Tesla state timestamps are epoch milliseconds
+    seconds = float(stamp) / 1000.0  # Tesla state timestamps are epoch milliseconds
+    if not math.isfinite(seconds):
+        return None
+    try:
+        datetime.fromtimestamp(seconds, UTC)
+    except (ValueError, OverflowError, OSError):
+        return None
+    return seconds
 
 
 def _matches(observed: Any, expected: Any, field: str) -> bool:
+    if isinstance(expected, bool):
+        return observed is expected
     if isinstance(expected, tuple):
         return observed in expected
     if field == "driver_temp_setting":
@@ -249,8 +257,12 @@ def confirm_state(
     """Cached `GET /state` readback compared with what `op` should have changed.
 
     Returns `{"status": "confirmed"|"unconfirmed"|"accepted", ...}`. A match on a section
-    older than `since_epoch - FRESHNESS_SLACK_SECONDS` is stale evidence, not confirmation.
+    before `since_epoch` is stale evidence, not confirmation; no pre-command slack applies.
     """
+    if not math.isfinite(since_epoch) or since_epoch < 0:
+        raise TessieError(
+            "Use the finite nonnegative command send time for confirmation", code="bad_parameter"
+        )
     spec = COMMAND_SPECS[op]
     if spec.section is None or spec.field is None or spec.expected is None:
         return {
@@ -280,7 +292,7 @@ def confirm_state(
         return {"status": "unconfirmed", "reason": "mismatch", **detail}
     if stamp is None:
         return {"status": "unconfirmed", "reason": "no_timestamp", **detail}
-    if stamp < since_epoch - FRESHNESS_SLACK_SECONDS:
+    if stamp < since_epoch:
         return {"status": "unconfirmed", "reason": "stale_state", **detail}
     return {"status": "confirmed", "reason": None, **detail}
 
@@ -332,7 +344,20 @@ def run_command(
         outcome["status"] = "failed"
         outcome["reason"] = "tessie_result_false"
         return outcome
-    outcome.update(confirm_state(client, vehicle, op, params, since_epoch=sent_at))
+    try:
+        outcome.update(confirm_state(client, vehicle, op, params, since_epoch=sent_at))
+    except TessieError as error:
+        # An accepted control cannot become "nothing was accepted" because its
+        # separate cached read failed. Preserve the receipt; never retry here.
+        outcome.update(
+            status="unconfirmed",
+            reason="confirmation_unavailable",
+            confirmation_error={
+                "code": error.code,
+                **({"http_status": error.http_status} if error.http_status is not None else {}),
+                **({"retry_after": error.retry_after} if error.retry_after is not None else {}),
+            },
+        )
     return outcome
 
 

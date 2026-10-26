@@ -19,7 +19,6 @@ from support import (
     state_payload,
 )
 from tessie_actions import (
-    FRESHNESS_SLACK_SECONDS,
     build_params,
     confirm_state,
     read_vehicle,
@@ -141,9 +140,43 @@ def test_accepted_command_with_matching_fresh_state_is_confirmed() -> None:
 
 
 def test_accepted_command_with_stale_matching_state_is_unconfirmed() -> None:
-    stale = NOW - FRESHNESS_SLACK_SECONDS - 5
+    stale = NOW - 20
     outcome = run(standard_transport(state=state_payload(locked=True, stamp_s=stale)), "lock")
     assert (outcome["status"], outcome["reason"]) == ("unconfirmed", "stale_state")
+
+
+@pytest.mark.parametrize(
+    ("offset", "expected"),
+    [(-10, "unconfirmed"), (-0.001, "unconfirmed"), (0, "confirmed"), (0.001, "confirmed")],
+)
+def test_confirmation_never_accepts_matching_pre_command_state(
+    offset: float, expected: str
+) -> None:
+    outcome = run(
+        standard_transport(state=state_payload(locked=True, stamp_s=NOW + offset)), "lock"
+    )
+    assert outcome["status"] == expected
+    assert outcome["tessie_result"] is True
+    if expected == "unconfirmed":
+        assert outcome["reason"] == "stale_state"
+
+
+@pytest.mark.parametrize("stamp", [True, float("nan"), float("inf"), float("-inf"), 1e300])
+def test_invalid_provider_timestamps_preserve_an_unconfirmed_accepted_receipt(
+    stamp: object,
+) -> None:
+    state = state_payload()
+    state["vehicle_state"]["timestamp"] = stamp
+    outcome = run(standard_transport(state=state), "lock")
+    assert outcome["tessie_result"] is True
+    assert (outcome["status"], outcome["reason"]) == ("unconfirmed", "no_timestamp")
+
+
+def test_numeric_lock_value_is_not_boolean_confirmation() -> None:
+    state = state_payload(stamp_s=NOW + 1)
+    state["vehicle_state"]["locked"] = 1
+    outcome = run(standard_transport(state=state), "lock")
+    assert (outcome["status"], outcome["reason"]) == ("unconfirmed", "mismatch")
 
 
 def test_accepted_command_with_mismatched_state_is_unconfirmed() -> None:
@@ -198,9 +231,11 @@ def test_missing_state_field_or_timestamp_is_unconfirmed() -> None:
 def test_a_failing_readback_is_a_visible_error_not_a_silent_confirm() -> None:
     transport = standard_transport()
     transport.routes[("GET", f"/{RUSTLER}/state")] = json_response({}, status=500)
-    with pytest.raises(TessieError) as caught:
-        run(transport, "lock")
-    assert caught.value.http_status == 500
+    outcome = run(transport, "lock")
+    assert outcome["tessie_result"] is True
+    assert (outcome["status"], outcome["reason"]) == ("unconfirmed", "confirmation_unavailable")
+    assert outcome["confirmation_error"] == {"code": "http_500", "http_status": 500}
+    assert len(transport.paths("POST")) == 1
 
 
 def test_command_sends_exactly_one_post_with_bounded_attempts() -> None:
