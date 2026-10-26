@@ -1,0 +1,8 @@
+{
+  "name": "jbaruch/nanoclaw-tesla",
+  "version": "0.0.0",
+  "description": "Provider identity scaffold for the NanoClaw Tesla overlay.",
+  "private": true,
+  "skills": [],
+  "rules": []
+}
