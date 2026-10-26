@@ -15,8 +15,10 @@ Coordinates and street addresses are stripped from stdout unless the chat is an
 owner chat AND `--include-location` is given; asking for it from any other chat is
 refused (exit 4), never silently ignored. `--from/--to/--tag` apply to `drives` only.
 
-Stdout (JSON): {"vehicle", "kind", "vehicle_status", "from_cache", "data",
-"location_redacted"}. Exit codes: see tessie_core.
+Stdout is a JSON object. Every read has vehicle, kind, vehicle_status and
+from_cache. The status kind stops there. Other kinds add data. Without explicit
+owner location inclusion, those kinds also add location_redacted (the count of
+removed fields); with inclusion, that count is absent. Exit codes: see tessie_core.
 """
 
 from __future__ import annotations

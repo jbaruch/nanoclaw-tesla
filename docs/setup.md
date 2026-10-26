@@ -89,6 +89,8 @@ A merged PR or synthetic test is not proof of an installed producer/consumer.
 
 ## Command and failure semantics
 
+Destination sharing requires an owner chat; non-owner chats cannot preview or
+execute it. Other supported controls follow the protected control/owner role.
 Scripts emit a plan before controls and require `--confirm "<alias>:<action>"`.
 The host independently checks role, VIN, current live access, fixed route,
 parameters and the selected alias/action. It never exposes raw provider errors,
@@ -106,6 +108,8 @@ is at or after actual host dispatch, with no pre-command grace period. A stale,
 mismatched or failed readback retains the accepted receipt and returns
 `unconfirmed` with exit 3. Missing host dispatch proof also remains unconfirmed.
 Flash, share and drive tags report acceptance without state confirmation.
+
+### Recovery
 
 | Failure | Required response |
 | --- | --- |

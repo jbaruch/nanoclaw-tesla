@@ -8,6 +8,7 @@ description: Controls run only from authorized chats, name the vehicle and actio
 ## Who May Control
 
 - A control needs a chat protected host policy lists under `control_chats` or `owner_chats`
+- Destination sharing requires an owner chat, including its preview
 - A read-only chat can look at a vehicle and cannot change it
 - The supported controls are the actions of `skills/tessie-ops/scripts/tessie-command.py`
 - Wake, trunks, windows, remote start, honk, sentry, valet and the rest of Tessie's command list stay unsupported

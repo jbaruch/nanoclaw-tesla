@@ -1,6 +1,6 @@
 ---
 name: tessie-ops
-description: "Reads and controls the owner's Tesla vehicles through the Tessie REST API using deterministic scripts: list vehicles, check the allowlist, read battery/charging/climate/locks/tires/firmware/drives from cache without waking the car, and send confirmed controls (lock, unlock, climate, charging, charge limit, share destination, flash, drive tags). Triggers: 'is the car locked', 'where is the car', 'tesla battery', 'tire pressure', 'lock the tesla', 'unlock the tesla', 'start climate', 'charge limit', 'send address to the car', 'tag my drives', 'tessie', 'my vehicles'."
+description: "Reads and controls the owner's Tesla vehicles through the Tessie REST API using deterministic scripts: list vehicles, check the allowlist, read battery/charging/climate/locks/tires/firmware/drives and authorized drivers from cache without waking the car, and send confirmed controls (lock, unlock, climate, charging, charge limit, share destination, flash, drive tags). Triggers: 'is the car locked', 'where is the car', 'who can drive the car', 'list Tesla drivers', 'tesla battery', 'tire pressure', 'lock the tesla', 'unlock the tesla', 'start climate', 'charge limit', 'send address to the car', 'tag my drives', 'tessie', 'my vehicles'."
 ---
 
 # Tessie Ops
@@ -50,23 +50,33 @@ python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-read.py locat
 
 Follow `rules/location-privacy.md`: never repeat coordinates or addresses outside an owner chat. A denied location read is final; do not look for the position in other output.
 
-## Step 5 — Preview A Control
+## Step 5 — List Authorized Drivers
 
-Use for every control request, before Step 6. Finish by showing the user the plan.
+Use when an owner asks who can drive the vehicle. Finish here.
+
+```bash
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-read.py drivers --vehicle "<alias>"
+```
+
+Drivers are owner-only. Exit 4 is final; report it and stop.
+
+## Step 6 — Preview A Control
+
+Use for every control request, before Step 7. Finish by showing the user the plan.
 
 ```bash
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py <action> --vehicle "<alias>" --dry-run
 ```
 
-`<action>` is `lock`, `unlock`, `start_climate`, `stop_climate`, `set_temperatures` (`--temperature`), `start_charging`, `stop_charging`, `set_charge_limit` (`--percent`), `share` (`--value`) or `flash`. State the vehicle (alias and VIN suffix) and the action to the user. Proceed to Step 6 only when the user's request already asked for that action on that vehicle.
+`<action>` is `lock`, `unlock`, `start_climate`, `stop_climate`, `set_temperatures` (`--temperature`), `start_charging`, `stop_charging`, `set_charge_limit` (`--percent`), `share` (`--value`) or `flash`. State the vehicle (alias and VIN suffix) and the action to the user. Destination sharing also requires an owner chat; the script refuses other chats before a plan or effect. Proceed to Step 7 only when the user's request already asked for that action on that vehicle.
 
-## Step 6 — Run A Control
+## Step 7 — Run A Control
 
 ```bash
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py <action> --vehicle "<alias>" --confirm "<alias>:<action>"
 ```
 
-Pass the same parameters as Step 5 and the `confirm_with` phrase the plan printed. Report the `status` field:
+Pass the same parameters as Step 6 and the `confirm_with` phrase the plan printed. Report the `status` field:
 
 - `confirmed` — Tessie accepted it and a fresh state read shows the change
 - `accepted` — Tessie accepted it; the action has no state field to check (flash, share)
@@ -75,7 +85,7 @@ Pass the same parameters as Step 5 and the `confirm_with` phrase the plan printe
 
 Never retry on your own. Finish here.
 
-## Step 7 — Confirm Vehicle State
+## Step 8 — Confirm Vehicle State
 
 Use when the user asks whether an earlier control took effect. Finish here.
 
@@ -85,12 +95,22 @@ python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-confirm.py <a
 
 Pass the earlier control's `sent_at_epoch` (unix seconds), plus `--temperature` or `--percent` when the action took one. Missing or failed confirmation retains known acceptance; never resend it automatically.
 
-## Step 8 — Tag Drives
+## Step 9 — Preview Drive Tags
 
-Use when the user asks to tag drives for later reporting. Preview and run it like a control.
+Use when the user asks to tag drives for later reporting. Finish by showing the
+plan's vehicle, drive IDs and tag to the user.
 
 ```bash
 python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py set_drive_tag --drives "<ids>" --tag "<tag>" --vehicle "<alias>" --dry-run
 ```
 
-Re-run without `--dry-run` and with `--confirm "<alias>:set_drive_tag"`. Finish here.
+## Step 10 — Apply Drive Tags
+
+Use after the preview has been shown and the user's request authorizes those
+drive IDs, tag and vehicle. Pass the exact `confirm_with` phrase from the plan.
+
+```bash
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-command.py set_drive_tag --drives "<ids>" --tag "<tag>" --vehicle "<alias>" --confirm "<alias>:set_drive_tag"
+```
+
+Report the accepted/refused result and finish here. Never replay uncertainty.

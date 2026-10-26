@@ -57,3 +57,10 @@ The normal commit hook runs pinned Gitleaks source through pre-commit 4.7.0. Kee
 Tests use synthetic VINs, a frozen clock and a fake transport; nothing reaches Tessie. `requirements-dev.lock` is compiled from `requirements-dev.txt` with `uv pip compile requirements-dev.txt --python-version 3.11 --generate-hashes -o requirements-dev.lock`.
 
 The owner enrolls this repository in the existing central review GitHub App. Publication uses the repository `TESSL_TOKEN` secret; never create a broad review token or store CI credentials in `.env`.
+
+The development `jbaruch/coding-policy` dependency pins 0.5.10. This new provider
+is outside the host contract’s enumerated floating-manifest set. No committed
+scanner tracks the Tessl registry; the maintainer checks it monthly with
+`tessl update jbaruch/coding-policy --yes` and lands any reviewed manifest update
+as a separate change. Dependabot renews external action digests; Renovate tracks
+the exact CI Python patch weekly within 3.11.

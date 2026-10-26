@@ -10,7 +10,8 @@ ACTION: lock, unlock, start_climate, stop_climate, set_temperatures (--temperatu
 15..28 °C), start_charging, stop_charging, set_charge_limit (--percent 50..100),
 share (--value, optional --locale), flash, set_drive_tag (--drives, optional --tag).
 
-Needs a control or owner chat. Two steps keep the vehicle and action explicit:
+Destination sharing needs an owner chat; other actions need a control or owner
+chat. Two steps keep the vehicle and action explicit:
 `--dry-run` resolves the vehicle and prints the plan (no request sent to the car); the
 real run must pass `--confirm "<alias>:<action>"` echoing that plan exactly, else it is
 refused (exit 4) and nothing is sent. The command goes out once with
@@ -50,7 +51,7 @@ from tessie_core import (
     TessieError,
     emit,
 )
-from tessie_policy import ROLE_CONTROL, norm_alias
+from tessie_policy import ROLE_CONTROL, ROLE_OWNER
 
 DRIVE_TAG_ACTION = "set_drive_tag"
 ACTIONS = (*COMMAND_OPS, DRIVE_TAG_ACTION)
@@ -93,14 +94,18 @@ def main(argv: Sequence[str] | None = None, *, runtime: Runtime | None = None) -
                 },
             )
         allowlist = rt.load()
-        rt.authorize(allowlist, ROLE_CONTROL, f"controlling a vehicle ({args.action})")
+        rt.authorize(
+            allowlist,
+            ROLE_OWNER if args.action == "share" else ROLE_CONTROL,
+            f"controlling a vehicle ({args.action})",
+        )
         vehicle = resolve(rt.client, allowlist, args.vehicle)
         plan = plan_for(vehicle, args.action, params)
         if args.dry_run:
             emit({"status": "planned", **plan}, rt.out)
             return EXIT_OK
         expected = confirmation_phrase(vehicle.alias, args.action)
-        if args.confirm is None or norm_alias(args.confirm) != norm_alias(expected):
+        if args.confirm != expected:
             raise TessieError(
                 f"refusing {args.action} on {vehicle.alias!r} (…{vehicle.vin_suffix}) without "
                 f'confirmation: re-run with --confirm "{expected}". Nothing was sent.',

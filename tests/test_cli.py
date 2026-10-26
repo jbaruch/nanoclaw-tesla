@@ -136,6 +136,25 @@ def test_include_location_needs_an_owner_chat(tmp_path: Path) -> None:
     assert code == 0 and str(LAT) in out
 
 
+@pytest.mark.parametrize(
+    ("kind", "include", "fields"),
+    [
+        ("status", False, {"vehicle", "kind", "vehicle_status", "from_cache"}),
+        (
+            "state",
+            False,
+            {"vehicle", "kind", "vehicle_status", "from_cache", "data", "location_redacted"},
+        ),
+        ("state", True, {"vehicle", "kind", "vehicle_status", "from_cache", "data"}),
+    ],
+)
+def test_reader_json_contract_field_presence(tmp_path, kind, include, fields):
+    args = [kind, *(["--include-location"] if include else [])]
+    code, out, err, _ = run(reader, args, tmp_path, chat=OWNER_CHAT)
+    assert code == 0 and err == ""
+    assert set(parse(out)) == fields
+
+
 def test_location_read_requires_the_flag_and_an_owner_chat(tmp_path: Path) -> None:
     code, out, err, _ = run(reader, ["location"], tmp_path, chat=OWNER_CHAT)
     assert (code, out) == (4, "") and "--include-location" in err
@@ -218,6 +237,44 @@ def test_command_without_the_echoed_confirmation_is_refused(tmp_path: Path) -> N
     assert code == 4 and transport.paths("POST") == []
 
 
+@pytest.mark.parametrize(
+    "phrase", ["the rustler:LOCK", " The Rustler:lock", "The  Rustler:lock", "The Rustler:lock "]
+)
+def test_confirmation_is_the_literal_plan_phrase(tmp_path, phrase):
+    code, out, err, transport = run(
+        command, ["lock", "--confirm", phrase], tmp_path, chat=CONTROL_CHAT
+    )
+    assert code == 4 and out == ""
+    assert "confirmation" in err
+    assert transport.paths("POST") == []
+
+
+@pytest.mark.parametrize("chat", [CONTROL_CHAT, READ_CHAT])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_destination_sharing_refuses_nonowner_chats_without_echoing_the_address(
+    tmp_path, chat, dry_run
+):
+    args = ["share", "--value", ADDRESS, "--confirm", "The Rustler:share"]
+    if dry_run:
+        args.append("--dry-run")
+    code, out, err, transport = run(command, args, tmp_path, chat=chat)
+    assert code == 4 and out == ""
+    assert ADDRESS not in err
+    assert transport.calls == []
+
+
+def test_owner_can_share_a_destination_with_exact_authorized_confirmation(tmp_path):
+    code, out, err, transport = run(
+        command,
+        ["share", "--value", ADDRESS, "--confirm", "The Rustler:share"],
+        tmp_path,
+        chat=OWNER_CHAT,
+    )
+    assert code == 0 and err == ""
+    assert parse(out)["status"] == "accepted"
+    assert transport.paths("POST") == [f"/{RUSTLER}/command/share"]
+
+
 def test_read_chats_cannot_control_a_vehicle(tmp_path: Path) -> None:
     code, out, err, transport = run(
         command, ["lock", "--confirm", "The Rustler:lock"], tmp_path, chat=READ_CHAT
@@ -230,7 +287,7 @@ def test_confirmed_lock_end_to_end(tmp_path: Path) -> None:
     transport = standard_transport(state=state_payload(locked=True, stamp_s=NOW + 1))
     code, out, _, transport = run(
         command,
-        ["lock", "--confirm", "the rustler:LOCK", "--max-attempts", "1"],
+        ["lock", "--confirm", "The Rustler:lock", "--max-attempts", "1"],
         tmp_path,
         transport,
         chat=CONTROL_CHAT,

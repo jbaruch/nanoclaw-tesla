@@ -20,7 +20,7 @@ What the `tessie-ops` scripts support, what they refuse, and the vehicle limits 
 
 - Every read probes `status` first, then reads Tessie's cached copy. A sleeping car reports `vehicle_status` `asleep` or `waiting_for_sleep` and `from_cache` true
 - No read calls wake and none asks for a live read
-- Coordinates, headings and street addresses are stripped unless an owner chat adds `--include-location`. Saved location names pass
+- Coordinates, headings, street addresses and saved-place labels are stripped from every read unless an owner chat explicitly adds `--include-location`
 
 ## Controls
 
@@ -35,7 +35,7 @@ What the `tessie-ops` scripts support, what they refuse, and the vehicle limits 
 | `flash` | `POST /{vin}/command/flash` | none | none: acceptance only |
 | `set_drive_tag` | `POST /{vin}/drives/set_tag` | `drives`, optional `tag` | none: not a vehicle actuator |
 
-- Controls need a control or owner chat, the allowlist, a `--dry-run` plan and a `--confirm "<alias>:<action>"` echo
+- Destination sharing requires an owner chat. Other controls need a control or owner chat, the allowlist, a `--dry-run` plan and a `--confirm "<alias>:<action>"` echo
 - Each control sends once with `wait_for_completion=true` and `max_attempts` at most 3; the client adds no retry
 - Outcomes: `confirmed`, `accepted`, `unconfirmed` (exit 3), `failed` (exit 1). Tessie's `{"result": true}` is acceptance. `confirmed` needs a cached state read whose changed field matches and whose valid section timestamp is at least the command send time; a matching pre-command state never confirms. If the separate readback fails, the result retains the accepted command receipt with `status: unconfirmed`, safe error category metadata and a no-automatic-retry diagnostic
 - Tessie documents automatic wake-up and firmware-error handling for controls, so a control may wake a sleeping car even though the overlay never calls wake

@@ -12,14 +12,14 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # CPython 3.11 is the interpreter the shipped scripts and pyrightconfig.json
-      # target. Renewal: revisit with the weekly Dependabot pip bump and before
-      # 3.11 reaches end of life (October 2027); no scanner tracks this pin.
-      - uses: actions/setup-python@v7
+      # Match the existing passing CI's CPython patch, not a floating input.
+      # Renovate's github-actions manager tracks setup-python's python-version;
+      # renovate.json schedules weekly updates within the supported 3.11 line.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7 (existing CI resolution)
         with:
-          python-version: '3.11'
+          python-version: '3.11.17'
           cache: pip
           cache-dependency-path: requirements-dev.lock
 
@@ -28,10 +28,11 @@ jobs:
       - run: python -m pip install --require-hashes -r requirements-dev.lock
 
       # Lint runs before tests per `jbaruch/coding-policy: code-formatting`.
+      - name: Format (ruff)
+        run: python -m ruff format --check tests/ skills/
+
       - name: Lint (ruff)
-        run: |
-          python -m ruff check tests/ skills/
-          python -m ruff format --check tests/ skills/
+        run: python -m ruff check tests/ skills/
 
       # Language diagnostics gate per `jbaruch/coding-policy: language-diagnostics`:
       # pyright must report zero findings before pytest runs.
