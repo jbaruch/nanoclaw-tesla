@@ -1,11 +1,12 @@
 {
   "name": "jbaruch/nanoclaw-tesla",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Deterministic Tessie vehicle reads, confirmed controls and health checks through protected dynamic vehicle policy and the existing OneCLI gateway.",
   "private": false,
   "skills": [
     "skills/tessie-ops",
-    "skills/tessie-watch"
+    "skills/tessie-watch",
+    "skills/tessie-running-late"
   ],
   "rules": [
     "rules/tessie-credentials.md",
@@ -13,6 +14,7 @@
     "rules/location-privacy.md",
     "rules/command-authorization.md",
     "rules/nanoclaw-skill-root.md",
-    "rules/provider-identity.md"
+    "rules/provider-identity.md",
+    "rules/running-late-approval.md"
   ]
 }
