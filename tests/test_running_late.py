@@ -18,24 +18,51 @@ callback = load_script("tessie-running-late", "tessie-late-callback-v1")
 adapter = load_script("tessie-ops", "tessie-argv")
 
 
-def test_closed_ipc_payload_uses_actual_native_transport_shape(monkeypatch):
-    seen = []
+def test_closed_ipc_payload_uses_actual_native_transport_shape(monkeypatch, tmp_path):
+    request_id = "00112233445566778899aabbccddeeff"
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "input").mkdir()
+    elapsed = [0.0]
+    observed = []
+    expected = {
+        "type": "tessie_late_request",
+        "requestId": request_id,
+        "sessionName": "maintenance",
+        "payload": {"schema_version": 1, "operation": "status"},
+    }
 
-    class Native:
-        message_type = "tessie_request"
+    def receive(seconds):
+        elapsed[0] += seconds
+        if observed:
+            return
+        task = tmp_path / "tasks" / f"tessie-{request_id}.json"
+        request = json.loads(task.read_text())
+        observed.append(request)
+        assert task.stat().st_mode & 0o777 == 0o600
+        # Independent host fixture accepts only the actual late envelope. An
+        # old producer hard-coded to tessie_request gets an error, not success.
+        reply = (
+            {"schema_version": 1, "status": 200, "data": {"attempts": 0}}
+            if request == expected
+            else {"schema_version": 1, "error": {"code": "unsupported", "message": "held"}}
+        )
+        (tmp_path / "input" / f"_script_result_{request_id}.json").write_text(json.dumps(reply))
 
-        def call(self, payload, timeout):
-            seen.append((self.message_type, payload, timeout))
-            return {"status": 200, "data": {"attempts": 0}}
-
-    monkeypatch.setattr(late_ipc, "native_type", lambda: Native)
+    real_native = late_ipc.native_type()
+    bridge = real_native(
+        tmp_path, monotonic=lambda: elapsed[0], sleep=receive, request_id=lambda: request_id
+    )
+    monkeypatch.setenv("NANOCLAW_SESSION_NAME", "maintenance")
+    monkeypatch.setattr(late_ipc, "native_type", lambda: lambda: bridge)
     assert late_ipc.call("status") == {"attempts": 0}
-    assert seen == [("tessie_late_request", {"schema_version": 1, "operation": "status"}, 300)]
+    assert observed == [expected]
+    assert not list((tmp_path / "tasks").glob("*.tmp"))
+    assert not list((tmp_path / "input").iterdir())
     with pytest.raises(ValueError):
         late_ipc.call("send", {"approved": "true"})
     with pytest.raises(ValueError):
         late_ipc.call("poll", {"receipt": "pretend"})
-    assert len(seen) == 1
+    assert len(observed) == 1
 
 
 def test_cli_preserves_literal_event_and_recipient_without_body_or_approval(monkeypatch, capsys):

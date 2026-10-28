@@ -19,4 +19,6 @@ Before preparing delegation or invoking running-late, read the complete `skills/
 
 ## Held Operations
 
-- The owner can cancel delegation without resetting history. Missing/unknown native contracts, state or grants hold the action; source publication is not native acceptance.
+- The owner can cancel delegation without resetting history.
+- Missing/unknown native contracts, state or grants hold the action.
+- Source publication is not native acceptance.
