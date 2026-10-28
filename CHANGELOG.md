@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.2.0 — 2026-10-28
+
 ### Add event-bound running-late delivery (#7)
 
 Add a native-only three-minute consumer, owner-requested event approval cards and cancellation/status commands. The protected host rereads Calendar and cached navigation, uses a dedicated event-scoped Gmail grant, and reserves a hard shared two-message budget before each owner/recipient attempt. The host retains record2 native event identities; old unbound record1 state holds unchanged. Backup restores inactive gates without approval or slot reset. This source does not claim installed grants, actual route/cadence or outbound acceptance; issue7 remains open for native acceptance.
