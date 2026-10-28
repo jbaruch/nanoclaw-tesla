@@ -3,7 +3,7 @@ name: tessie-running-late
 description: "Prepare or cancel event-specific running-late delegation, inspect running-late status, or run its native three-minute poll. Triggers: 'tell them if I am running late', 'approve lateness messages for this event', 'cancel running-late approval', 'running late status'."
 cadence: "*/3 * * * * (TZ=local)"
 script: "scripts/tessie-late-precheck.py"
-script_timeout_ms: 300000
+precheck_timeout_ms: 330000
 ---
 
 # Tessie Running Late

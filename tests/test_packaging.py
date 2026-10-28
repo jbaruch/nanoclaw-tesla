@@ -131,3 +131,13 @@ def test_workflows_reference_files_the_repo_ships() -> None:
     assert all("FLEET_DISPATCH_TOKEN" not in path.read_text() for path in workflows.glob("*.yml"))
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "Unreleased" not in changelog
+
+
+def test_running_late_cadence_uses_the_installed_precheck_timeout_field() -> None:
+    fields = frontmatter(ROOT / "skills/tessie-running-late/SKILL.md")
+    assert fields["cadence"] == "*/3 * * * * (TZ=local)"
+    assert fields["script"] == "scripts/tessie-late-precheck.py"
+    # Runtime reads precheck_timeout_ms, not a generic script_timeout_ms key;
+    # the bounded native IPC wait is 300s and needs room to emit its result.
+    assert int(fields["precheck_timeout_ms"]) > 300_000
+    assert "script_timeout_ms" not in fields
