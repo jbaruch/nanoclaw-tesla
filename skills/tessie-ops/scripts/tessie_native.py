@@ -38,6 +38,8 @@ def unavailable(code: str = "host_unavailable") -> TessieError:
 
 
 class NativeIPC:
+    message_type = "tessie_request"
+
     def __init__(
         self,
         root: Path = IPC_ROOT,
@@ -59,7 +61,7 @@ class NativeIPC:
         temporary = target.with_suffix(".tmp")
         reply = self.root / "input" / f"_script_result_{request_id}.json"
         data = {
-            "type": "tessie_request",
+            "type": self.message_type,
             "requestId": request_id,
             "sessionName": session,
             "payload": payload,

@@ -32,7 +32,9 @@ def test_herdr_declaration_is_the_reviewed_artifact_byte_for_byte() -> None:
 def test_plugin_manifest_declares_every_skill_and_rule_that_exists() -> None:
     manifest = json.loads((ROOT / ".tessl-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert manifest["name"] == "jbaruch/nanoclaw-tesla"
-    assert manifest["version"] == "0.1.0"
+    # The canonical publisher owns each stamped version, including this source's
+    # already-published 0.1.1 predecessor; packaging requires valid semver.
+    assert re.fullmatch(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)", manifest["version"])
     assert manifest["private"] is False
     for skill in manifest["skills"]:
         assert (ROOT / skill / "SKILL.md").is_file(), skill

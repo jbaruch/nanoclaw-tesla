@@ -1,5 +1,9 @@
 # Changelog
 
+### Add event-bound running-late delivery (#7)
+
+Add a native-only three-minute consumer, owner-requested event approval cards and cancellation/status commands. The protected host rereads Calendar and cached navigation, uses a dedicated event-scoped Gmail grant, and reserves a hard shared two-message budget before each owner/recipient attempt. Unknown or uncertain state holds; backup restores inactive gates without approval or slot reset. This source does not claim installed grants, actual route/cadence or outbound acceptance; issue7 remains open for native acceptance.
+
 ## 0.1.0 — 2026-10-26
 
 ### Add the script-first Tessie foundation (#1)
