@@ -68,5 +68,6 @@ def test_unapproved_added_script_invocations_are_not_silently_ignored(command):
 def test_shipped_scripts_are_executable_entry_points() -> None:
     for script in sorted((ROOT / "skills").glob("*/scripts/tessie-*.py")):
         text = script.read_text(encoding="utf-8")
+        assert script.stat().st_mode & 0o111, script.name
         assert text.startswith("#!/usr/bin/env python3"), script.name
         assert 'if __name__ == "__main__":' in text, script.name

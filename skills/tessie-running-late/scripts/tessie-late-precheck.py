@@ -23,11 +23,11 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    try:
+        result = call("poll")
     # outer-boundary-process-contract: the scheduler treats invalid/missing JSON
     # as an unknown result. Emit structured false-wake plus fixed stderr/nonzero;
     # propagation can expose private transport details and break that contract.
-    try:
-        result = call("poll")
     except Exception:  # noqa: BLE001 — outer-boundary-process-contract
         print(
             "Running-late poll held. Inspect native host/owner setup "

@@ -110,6 +110,28 @@ def test_real_stdin_cli_cannot_extend_authority(args):
     assert "Traceback" not in done.stderr
 
 
+@pytest.mark.parametrize(
+    ("name", "argument", "status"),
+    [
+        ("tessie-late-precheck.py", "--unexpected", 2),
+        ("tessie-late.py", "--unexpected", 2),
+        ("tessie-late-callback-v1.py", "invalid", 1),
+    ],
+)
+def test_direct_entry_points_refuse_invalid_arguments_before_host_access(name, argument, status):
+    done = subprocess.run(
+        [str(ROOT / "skills/tessie-running-late/scripts" / name), argument],
+        input="",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert done.returncode == status
+    assert done.stdout == ""
+    assert done.stderr and "Traceback" not in done.stderr
+
+
 def test_missing_native_reply_is_redacted_and_never_retried(monkeypatch, capsys):
     calls = []
 

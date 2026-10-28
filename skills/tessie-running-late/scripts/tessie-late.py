@@ -63,11 +63,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.proposal_id is not None and re.fullmatch(r"[a-f0-9]{64}", args.proposal_id) is None:
         parser.error("proposal-id must be the exact opaque host identifier")
+    try:
+        result = call(args.operation, fields)
     # outer-boundary-process-contract: callers treat invalid/missing JSON as an
     # unknown native outcome. Emit fixed stderr/nonzero; propagation could leak
     # private IPC/provider details and break the redacted output contract.
-    try:
-        result = call(args.operation, fields)
     except Exception:  # noqa: BLE001 — outer-boundary-process-contract
         print(
             "Running-late held. Verify the installed host contract and native owner source; "
