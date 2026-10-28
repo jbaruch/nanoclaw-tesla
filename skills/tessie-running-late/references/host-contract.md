@@ -14,9 +14,9 @@ The displayed native approval card declares the shared delivery budget. `facts.t
 
 ## State owner and recovery
 
-The host `src/host-plugins/tessie-late/store.ts` solely owns callback-private DB4 tables, records1, installed by `callback-004-tessie-running-late.ts`. Consumers do not read, write, migrate or clear those tables. Its Stateful Artifacts gate-store exception refuses unknown/malformed records with actionable migration/reader guidance; treating them as absent would reopen a delivery budget. Supported predecessor database migrations run only through the native installer.
+The host `src/host-plugins/tessie-late/store.ts` solely owns callback-private DB4 tables, records2, installed by `callback-004-tessie-running-late.ts`. Consumers do not read, write, migrate or clear those tables. Its Stateful Artifacts gate-store exception refuses unknown/malformed records with actionable migration/reader guidance; treating them as absent would reopen a delivery budget. Budgets retain and validate the literal primary calendar/native event identity before scoped reads, so moved keys cannot reopen a consumed gate. Supported predecessor database migrations run only through the native installer. Earlier unshipped record1 stores/envelopes HOLD unchanged; the consumer cannot infer identities, migrate or reset them.
 
-Backup ledger3 contains inactive Tessie record1 proposals, budgets and every uncertain/sent attempt alongside existing conference and Tasks gates. Restore is monotone, never restores actionable callback rows or approval, and cannot reopen a consumed slot. Preserve unknown state for the host owner to repair. Do not delete a gate, clear uncertain attempts, import caller receipts, or resend because an acknowledgment is missing.
+Backup ledger3 contains inactive Tessie record2 proposals, budgets and every uncertain/sent attempt alongside existing conference and Tasks gates. Restore is monotone, never restores actionable callback rows or approval, and cannot reopen a consumed slot. Preserve unknown state for the host owner to repair. Do not delete a gate, clear uncertain attempts, import caller receipts, or resend because an acknowledgment is missing.
 
 This source contract does not claim native installation, owner callback, cadence, grant, vehicle-route or outbound acceptance. Keep issue7 open until those actual checks are complete.
 
