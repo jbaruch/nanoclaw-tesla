@@ -111,9 +111,10 @@ permission to create another cadence.
 
 For this contract-only v2 bootstrap, publish/install matching
 `tessie-calendar-charge-host-v2` and this consumer-v2 contract first. Python
-runtime and wire1 remain unchanged; incumbent Core v1 contract checks hold v2,
-and charging stays unenrolled with no cadence. Then merge/install the compatible
-Core v2 reader. Other producer/consumer releases retain the normal producer-first
+runtime and wire1 remain unchanged; incumbent Core v1 contract checks hold v2.
+Do not enroll or activate calendar charging during bootstrap. Preserve existing
+policy and gates; keep any existing cadence paused with its prior status recorded.
+Then merge/install the compatible Core v2 reader. Other producer/consumer releases retain the normal producer-first
 order in the Host authority.
 
 After compatible readers are installed and native identity/home/policy bindings
