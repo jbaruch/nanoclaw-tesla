@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — 2026-10-29
+
+### Add native calendar-aware charge planning (#2)
+
+Add the native-only charging consumer and reusable measured-energy estimates. The protected Core owner reads complete drive-engine Calendar metadata, current non-archived vehicles, measured battery capacity/consumption and routed distance. It retains the native daily baseline, raises only for next-day shortfalls, restores after actual cancellation or completed return home, and reserves one evening notice before sending. Observable manual changes and uncertain commands hold; cached data cannot provide provider compare-and-set or ABA protection. No cadence or enrollment activates from this source. Host authority and the compatible Core producer must be installed before owner enrollment and genuine vehicle/channel acceptance; issue2 remains open.
+
 ## 0.2.0 — 2026-10-28
 
 ### Add event-bound running-late delivery (#7)

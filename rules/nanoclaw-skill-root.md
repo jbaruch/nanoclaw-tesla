@@ -10,14 +10,14 @@ applyTo: "skills/**/SKILL.md, skills/**/references/*.md — when writing or revi
 - NanoClaw installs each of this plugin's skills at `/home/node/.claude/skills/tessl__<skill>/` inside the agent container
 - That directory is the only skill root the container mounts
 - Command blocks invoke a co-shipped script as `python3 /home/node/.claude/skills/tessl__<skill>/scripts/<file>`
-- `<skill>` is one of this plugin's skills: `tessie-ops`, `tessie-watch`, `tessie-running-late`
+- `<skill>` is one of this plugin's skills: `tessie-ops`, `tessie-watch`, `tessie-running-late`, `tessie-charge`
 - `<file>` is a script under `skills/<skill>/scripts/` in this repository
 - No other root, fallback or computed lookup is used in a command block
 
 ## Scope
 
-- Authored scope: the three skills' `SKILL.md` files
-- Co-shipped targets: every `tessie-*.py` under those three skills' `scripts/` directories
+- Authored scope: the four skills' `SKILL.md` files
+- Co-shipped targets: every `tessie-*.py` under those four skills' `scripts/` directories
 - Input and output contracts: each script's own docstring
 
 ## Authority

@@ -5,7 +5,7 @@ addopts = "-ra --strict-markers"
 [tool.ruff]
 # Lint and format every Python file the plugin ships (skills/) and its tests,
 # per `jbaruch/coding-policy: code-formatting`.
-src = ["tests", "skills/tessie-ops/scripts", "skills/tessie-watch/scripts", "skills/tessie-running-late/scripts"]
+src = ["tests", "skills/tessie-ops/scripts", "skills/tessie-watch/scripts", "skills/tessie-running-late/scripts", "skills/tessie-charge/scripts"]
 include = ["tests/**/*.py", "skills/**/*.py"]
 line-length = 100
 
