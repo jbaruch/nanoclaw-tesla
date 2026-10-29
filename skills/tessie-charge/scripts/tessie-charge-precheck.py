@@ -24,8 +24,10 @@ def main() -> int:
         counts = {name: result[name] for name in ("changed", "held")}
         if any(type(value) is not int or not 0 <= value <= 100 for value in counts.values()):
             raise ValueError("Invalid native charging counts.")
-    # outer-boundary-process-contract: scheduler failure must remain visible;
-    # false-wake is not success and never triggers a duplicate model notice.
+    # outer-boundary-process-contract: the scheduler treats missing/invalid
+    # precheck JSON as silent failure. Emit fixed false-wake JSON plus fixed
+    # stderr/nonzero; propagation would omit that required envelope and could
+    # hide the native failure. False-wake never requests a duplicate notice.
     except Exception:  # noqa: BLE001 — outer-boundary-process-contract
         print(
             "Calendar charging held; inspect native owner setup and retained intent.",

@@ -1,6 +1,7 @@
 """Fixed calendar-charge native IPC; no HTTP, policy writer or direct control.
 
-call accepts poll/status without fields, or estimate with literal vehicle,
+call accepts poll/status without fields, or estimate with an exact native
+alias/VIN carried as one literal vehicle value by the bounded argv adapter,
 distance_km and departure fields. Native registered-main identity, installed
 contracts and protected owner enrollment are enforced by the host. A caller
 cannot supply those facts. One request is published; uncertain polls never retry.

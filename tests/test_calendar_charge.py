@@ -255,3 +255,87 @@ def test_present_incomplete_native_provider_never_uses_development_fallback(
     with pytest.raises((ValueError, OSError)):
         charge_ipc.native_type()
     assert outside.read_text() == "# never imported"
+
+
+def test_encoded_estimate_resolves_co_shipped_charge_cli_and_retains_literal_alias(
+    monkeypatch, capsys
+):
+    import base64
+
+    adapter = load_script("tessie-ops", "tessie-argv")
+    alias = 'Native $(no shell) "車" car'
+    args = [
+        "estimate",
+        "--vehicle",
+        alias,
+        "--distance-km",
+        "250",
+        "--departure",
+        "2024-01-16T08:00:00Z",
+    ]
+    token = (
+        base64.urlsafe_b64encode(json.dumps({"script": "tessie-charge", "argv": args}).encode())
+        .decode()
+        .rstrip("=")
+    )
+    target, decoded = adapter.decode_argv(token)
+    assert target == ROOT / "skills/tessie-charge/scripts/tessie-charge.py"
+    observed = []
+    monkeypatch.setattr(
+        cli,
+        "call",
+        lambda operation, fields: (
+            observed.append((operation, fields)) or {"schema_version": 1, "forecast_only": True}
+        ),
+    )
+    assert cli.main(decoded) == 0
+    assert json.loads(capsys.readouterr().out)["forecast_only"] is True
+    assert observed == [
+        ("estimate", {"vehicle": alias, "distance_km": 250.0, "departure": "2024-01-16T08:00:00Z"})
+    ]
+
+
+def test_real_encoded_estimate_shell_exec_never_evaluates_alias(tmp_path):
+    import base64
+    import shlex
+    import shutil
+
+    ops = tmp_path / "skills/tessie-ops/scripts"
+    charge = tmp_path / "skills/tessie-charge/scripts"
+    ops.mkdir(parents=True)
+    charge.mkdir(parents=True)
+    wrapper = ops / "tessie-argv.py"
+    shutil.copyfile(ROOT / "skills/tessie-ops/scripts/tessie-argv.py", wrapper)
+    (charge / "tessie-charge.py").write_text(
+        "import json,sys; print(json.dumps(sys.argv[1:])); sys.exit(17)\n"
+    )
+    alias = 'Native$(touch${IFS}shell-marker)`touch${IFS}shell-marker`";#'
+    args = [
+        "estimate",
+        "--vehicle",
+        alias,
+        "--distance-km",
+        "250",
+        "--departure",
+        "2024-01-16T08:00:00Z",
+    ]
+    token = (
+        base64.urlsafe_b64encode(json.dumps({"script": "tessie-charge", "argv": args}).encode())
+        .decode()
+        .rstrip("=")
+    )
+    done = subprocess.run(
+        [
+            "/bin/sh",
+            "-c",
+            f"exec {shlex.quote(sys.executable)} {shlex.quote(str(wrapper))} {token}",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    assert done.returncode == 17
+    assert json.loads(done.stdout) == args
+    assert not (tmp_path / "shell-marker").exists()

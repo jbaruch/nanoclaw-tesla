@@ -46,7 +46,8 @@ restore the original daily baseline silently.
 
 The host persists a private charge gate before its command intent and one POST.
 Fresh native policy, source, inventory and actual observed limit are rechecked.
-An observed external limit change becomes a sticky owner-override hold. Tessie
+An observed external limit change becomes a sticky owner-override hold, as does a
+host-observed manual limit command, including A→B→A. Tessie
 offers no compare-and-set parameter: changes after the last cached read, including
 ABA changes, are unobservable. Do not promise absolute override protection. The
 owner must accept that limitation before native enrollment.
@@ -54,7 +55,14 @@ owner must accept that limitation before native enrollment.
 Acceptance is not confirmation. Preserve accepted intent until matching native
 state at/after dispatch confirms the limit. Matching read-only recovery can settle
 an accepted unconfirmed request without another POST. A failed/unknown command
-remains held; no consumer retry, reset, erase or re-enrollment path exists.
+remains held; no consumer retry, reset, erase or re-enrollment path exists. Only a
+broker-persisted witness that its provider POST was never entered permits the
+host to restore the exact pre-attempt charge checkpoint under still-current
+authority, then replan from fresh facts with a new request identity. The entire
+current charge record/operation must still match; revocation, changed enrollment
+or a sticky manual override prevents restoration. The host never rolls policy
+back or removes the original command tombstone. Provider refusal after dispatch
+is not proof of no effect and does not gain this recovery.
 
 The host reserves one bounded Russian owner notice per local evening before send.
 Crash/timeout consumes that slot. Submitted is a resolved native send call, not a

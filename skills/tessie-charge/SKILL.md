@@ -19,19 +19,29 @@ Report the bounded private counts only. Status performs no vehicle/provider read
 
 ## Step 2 — Estimate Energy
 
-Use the exact VIN from current native non-archived inventory. If that inventory is absent, invoke `Skill(skill: "tessie-ops")` to list current vehicles, then continue this step. Select the owner's vehicle without guessing an alias or maintaining a VIN snapshot.
+Use an exact alias from current native non-archived inventory. If that inventory
+is absent, invoke `Skill(skill: "tessie-ops")` to list current vehicles, then
+continue this step. Select the owner's vehicle without guessing or maintaining
+a VIN snapshot.
 
-Use only the returned 17-character uppercase alphanumeric VIN, a finite canonical decimal distance in km and a zoned RFC3339 departure. These tokens contain no shell operators. Raw owner prose, aliases, addresses and routes never enter shell source.
+Use the existing co-shipped `tessie-argv.py` contract. With a structured file-write
+tool write `/tmp/tessie-argv-input.json` containing exactly `script: "tessie-charge"`
+and `argv: ["estimate", "--vehicle", alias, "--distance-km", distance_km,
+"--departure", departure]`. Every argv value is a string; distance is a finite
+canonical decimal in km and departure is zoned RFC3339. Use the encoder's returned
+`base64url` token below. Only `[A-Za-z0-9_-]` enters shell source; never interpolate
+the alias, owner prose, addresses or routes into a shell command.
 
 ```bash
-python3 /home/node/.claude/skills/tessl__tessie-charge/scripts/tessie-charge.py estimate --vehicle NATIVE_VIN --distance-km DISTANCE_KM --departure RFC3339
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py --encode /tmp/tessie-argv-input.json
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py BASE64URL
 ```
 
 The native result contains measured usable capacity/consumption, measurement time, conditional departure charge and minimum energy charging stops. An unknown charging rate stays unknown. These are forecasts, not charger availability, full-charge promises or control approval. Finish here.
 
 ## Step 3 — Run The Enrolled Poll
 
-Only invoke this outside the cadence when explicitly requested. The host uses complete native Calendar drive metadata, current dynamic vehicles and measured energy; it owns any standing-approved limit change and its one evening notice.
+Only invoke this outside the cadence when explicitly requested. The host owns any standing-approved limit change and its one evening notice.
 
 ```bash
 python3 /home/node/.claude/skills/tessl__tessie-charge/scripts/tessie-charge.py poll

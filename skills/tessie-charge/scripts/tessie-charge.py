@@ -2,7 +2,11 @@
 """Native calendar-charge poll/status or read-only reusable energy estimate.
 
 Usage: tessie-charge.py poll | status
-       tessie-charge.py estimate --vehicle ALIAS --distance-km NUMBER --departure RFC3339
+       tessie-charge.py estimate --vehicle NATIVE_ALIAS_OR_VIN
+                                --distance-km NUMBER --departure RFC3339
+
+Pass a current native alias as one literal argv value via the co-shipped bounded
+`tessie-argv.py` adapter; never interpolate it into shell source.
 
 Stdout is one native schema-1 JSON result. poll may invoke standing-owner-approved
 controls and the host's one-evening notice. status has no provider I/O. estimate
@@ -44,13 +48,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         result = call(args.operation, fields)
         encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
-    # outer-boundary-process-contract: this finite JSON CLI is an agent boundary.
-    # Fixed stderr/nonzero retains the unknown native outcome without leaking
-    # provider/storage prose. Never retry or manufacture a ready/approval flag.
+    # outer-boundary-process-contract: the agent caller treats absent/invalid
+    # JSON as silent failure. Emit no stdout and fixed stderr/nonzero; allowing
+    # arbitrary exceptions to propagate breaks that contract and leaks private
+    # provider/storage prose. Never retry an unknown native outcome.
     except Exception:  # noqa: BLE001 — outer-boundary-process-contract
         print(
-            "Calendar charging held. Inspect installed host authority, native owner enrollment "
-            "and retained control history; never replay an uncertain command.",
+            "Calendar charging held. Update the installed host charging reader for retained "
+            "schemas and inspect native owner enrollment; preserve all private charge gates. "
+            "Never reset a gate, erase history or replay an uncertain command.",
             file=sys.stderr,
         )
         return 1
