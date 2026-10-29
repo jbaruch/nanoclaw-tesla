@@ -1,6 +1,6 @@
 # Native calendar charging
 
-Contract: tessie-calendar-charge-consumer-v1
+Contract: tessie-calendar-charge-consumer-v2
 
 The protected Core owner is `src/host-plugins/tessie-charge/`, sharing the existing
 Tessie broker, OneCLI route, dynamic non-archived inventory and private
@@ -12,10 +12,14 @@ database migration, new credential or consumer authority store exists.
 ## Admission and planning
 
 The host requires the actual unique registered Telegram main source and a
-protected owner enrollment. Policy 2 stays readable and inactive; policy 3 adds
+protected owner enrollment. Policy 2 stays readable without charging authority; policy 3 adds
 nullable `charge_automation`. Only the host operator provisions it from an actual
 owner decision after installing the dual reader. Caller flags, JSON, task IDs,
 local files and successful estimates cannot grant enrollment or control.
+Current nested enrollment is schema2 with required `home_timezone`; top-level
+policy remains3. Legacy nested enrollment1 is readable only for basic Tessie
+policy compatibility; it grants no charging action authority. Planning and
+controls hold with `charge_enrollment_version`. No consumer supplies or migrates that authority.
 
 Enrollment selects an optional default vehicle, exact event/driver mappings,
 native home labels, home-zone evening hour, daily baseline expectation and energy
@@ -24,13 +28,21 @@ vehicles and existing authorization before a control. Baselines outside the
 authorized 50–100 range hold; never clamp them or make restoration unauthorized.
 
 Charging uses only the native host's supported schema-4 `tz_state.home_tz`.
-It must be a nonempty valid IANA string. Missing, unsupported or invalid home
+The bound `home_timezone` must be a trimmed nonempty valid IANA string of at most
+100 UTF-16 code units. Missing, unsupported or invalid home
 state holds; travel/current timezone, agent context, server timezone and UTC
 are not fallbacks. Today/tomorrow, day boundaries, evening admission and notice
 budgets all use this home clock. A changed home must hold at the existing
-runtime recheck before an effect. This adds no enrollment, record or wire field.
-The clock correction itself does not rewrite or retag retained state or reopen
-notice slots; the host operator owns any existing-history acceptance.
+runtime recheck before an effect. Enrollment2 `home_timezone` must match native
+home at every fence; current charge-state2 and charge-notice2 carry that same
+required IANA binding. Native request/response wire1 remains unchanged.
+
+Before planning effects or a new notice-day lookup, the host performs bounded
+ALL-notice discovery alongside complete charge-state discovery. Legacy state1
+and notice1, including a notice saved under another day, hold byte-exact with
+`charge_state_version` or `charge_notice_version`. Unknown/future/malformed or
+misbound records hold rather than becoming absence. No automatic migration,
+rekey, retag, reset, guessed timezone or reopened notice slot is permitted.
 
 Only maintained drive-engine schema-1 Calendar metadata identifies drives; titles
 and city substrings supply no evidence. The host reads complete bounded next-day
@@ -98,7 +110,13 @@ native home change. This is registration guidance, not a consumer scheduler or
 permission to create another cadence.
 
 Publish/install the Host contract, then the compatible Core producer, then this
-consumer. The host checks declared installed providers and complete regular
+consumer. Require matching installed `tessie-calendar-charge-host-v2` and this
+consumer-v2 reference; stale v1 contracts cannot authorize the new writer.
+Verify the reader accepts home-bound2 and holds legacy enrollment1
+for charging plus all retained legacy gates before the host provisions a new
+schema2 enrollment epoch from an actual owner decision/native proof. A clean
+current native store is not a general legacy-schema exception.
+The host checks declared installed providers and complete regular
 co-shipped files before dispatch. Source release proves no native enrollment,
 vehicle effect, real clock/cadence, route, channel acknowledgment or owner decision.
 Keep issue #2 open until the host operator completes those native acceptance checks.
