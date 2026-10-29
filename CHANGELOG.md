@@ -1,5 +1,9 @@
 # Changelog
 
+### Align calendar charging with the native home clock (#2)
+
+Describe home-zone evening, tomorrow-drive and notice timing, with unknown-home holds and an explicitly home-pinned cadence. Preserve policy/gate/wire formats, native enrollment and missing-CAS acceptance, retained history and the separate live-control test gate. No cadence or policy activates from this documentation.
+
 ## 0.3.0 — 2026-10-29
 
 ### Add native calendar-aware charge planning (#2)

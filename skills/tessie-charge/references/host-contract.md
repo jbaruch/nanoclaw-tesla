@@ -18,10 +18,19 @@ owner decision after installing the dual reader. Caller flags, JSON, task IDs,
 local files and successful estimates cannot grant enrollment or control.
 
 Enrollment selects an optional default vehicle, exact event/driver mappings,
-native home labels, owner's evening hour, daily baseline expectation and energy
+native home labels, home-zone evening hour, daily baseline expectation and energy
 buffers. No VIN allowlist is snapshotted. The broker rereads current non-archived
 vehicles and existing authorization before a control. Baselines outside the
 authorized 50–100 range hold; never clamp them or make restoration unauthorized.
+
+Charging uses only the native host's supported schema-4 `tz_state.home_tz`.
+It must be a nonempty valid IANA string. Missing, unsupported or invalid home
+state holds; travel/current timezone, agent context, server timezone and UTC
+are not fallbacks. Today/tomorrow, day boundaries, evening admission and notice
+budgets all use this home clock. A changed home must hold at the existing
+runtime recheck before an effect. This adds no enrollment, record or wire field.
+The clock correction itself does not rewrite or retag retained state or reopen
+notice slots; the host operator owns any existing-history acceptance.
 
 Only maintained drive-engine schema-1 Calendar metadata identifies drives; titles
 and city substrings supply no evidence. The host reads complete bounded next-day
@@ -38,7 +47,8 @@ never replaces measurements. Estimates expose no precise location or Calendar bo
 
 ## Effects and uncertainty
 
-In the enrolled evening, raise only for tomorrow's measured shortfall, up to 100.
+In the enrolled evening in the home zone, raise only for the measured shortfall
+on the next home calendar day, up to 100.
 A disconnected shortfall gets at most one owner notice. A route beyond usable
 charge includes minimum energy charging stops, not a charger itinerary. After
 completed drives and native return-home proof, or exact native cancellation,
@@ -64,7 +74,7 @@ or a sticky manual override prevents restoration. The host never rolls policy
 back or removes the original command tombstone. Provider refusal after dispatch
 is not proof of no effect and does not gain this recovery.
 
-The host reserves one bounded Russian owner notice per local evening before send.
+The host reserves one bounded Russian owner notice per home-zone evening before send.
 Crash/timeout consumes that slot. Submitted is a resolved native send call, not a
 channel acknowledgment. Long fleets receive an honest aggregate; every structured
 item remains in the native result. No model-generated duplicate follows the poll.
@@ -81,6 +91,11 @@ estimate grants no control or notice. Missing host/contract/enrollment stays hel
 The precheck is an executable adapter for a later explicitly registered cadence.
 It emits `wake_agent:false` and counts after success; failures retain nonzero plus
 a fixed repair diagnostic. No cadence frontmatter enrolls it automatically.
+The host operator pins the separately authorized cadence to the verified home
+IANA timezone, never `schedule_timezone: local`, which follows travel. Verify its
+next run at the enrolled home wall time before activation and reverify after a
+native home change. This is registration guidance, not a consumer scheduler or
+permission to create another cadence.
 
 Publish/install the Host contract, then the compatible Core producer, then this
 consumer. The host checks declared installed providers and complete regular
