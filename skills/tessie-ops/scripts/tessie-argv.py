@@ -5,8 +5,8 @@ Usage: tessie-argv.py BASE64URL
        tessie-argv.py --encode JSON_FILE
 BASE64URL is unpadded URL-safe base64 of one UTF-8 JSON object with exactly
 {script, argv}. script is tessie-vehicles, tessie-allowlist, tessie-read,
-tessie-command, tessie-confirm or tessie-late; argv is a list of strings. Build JSON using a
-serializer in the caller's structured-data/code context, then encode it there.
+tessie-command, tessie-confirm, tessie-late or tessie-charge; argv is a list of strings.
+Build JSON using a serializer in the caller's structured-data/code context, then encode it there.
 Only the resulting [A-Za-z0-9_-] token enters a shell command. Never interpolate
 the original alias, destination, tag or confirmation into shell source.
 
@@ -41,6 +41,7 @@ SCRIPTS = frozenset(
         "tessie-command",
         "tessie-confirm",
         "tessie-late",
+        "tessie-charge",
     }
 )
 TOKEN = re.compile(r"[A-Za-z0-9_-]{1,32768}")
@@ -77,13 +78,16 @@ def decode_argv(token: str) -> tuple[Path, list[str]]:
         except UnicodeEncodeError as exc:
             raise ValueError("input") from exc
     root = Path(__file__).resolve().parent
-    if value["script"] == "tessie-late":
-        native = Path("/home/node/.claude/skills/tessl__tessie-running-late")
-        root = (
-            native / "scripts"
-            if native.exists() or native.is_symlink()
-            else root.parents[1] / "tessie-running-late" / "scripts"
-        )
+    if value["script"] in {"tessie-late", "tessie-charge"}:
+        skill = "tessie-running-late" if value["script"] == "tessie-late" else "tessie-charge"
+        native = Path("/home/node/.claude/skills") / ("tessl__" + skill)
+        if native.exists() or native.is_symlink():
+            root = native / "scripts"
+        else:
+            owner = Path(__file__).absolute().parents[1]
+            if not (owner.name == "tessie-ops" and owner.parent.name == "skills"):
+                raise ValueError("input")
+            root = root.parents[1] / skill / "scripts"
         if not root.is_dir():
             raise ValueError("input")
         root = root.resolve()
