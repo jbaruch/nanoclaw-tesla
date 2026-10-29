@@ -109,13 +109,20 @@ next run at the enrolled home wall time before activation and reverify after a
 native home change. This is registration guidance, not a consumer scheduler or
 permission to create another cadence.
 
-Publish/install the Host contract, then the compatible Core producer, then this
-consumer. Require matching installed `tessie-calendar-charge-host-v2` and this
-consumer-v2 reference; stale v1 contracts cannot authorize the new writer.
-Verify the reader accepts home-bound2 and holds legacy enrollment1
-for charging plus all retained legacy gates before the host provisions a new
-schema2 enrollment epoch from an actual owner decision/native proof. A clean
-current native store is not a general legacy-schema exception.
+For this contract-only v2 bootstrap, publish/install matching
+`tessie-calendar-charge-host-v2` and this consumer-v2 contract first. Python
+runtime and wire1 remain unchanged; incumbent Core v1 contract checks hold v2,
+and charging stays unenrolled with no cadence. Then merge/install the compatible
+Core v2 reader. Other producer/consumer releases retain the normal producer-first
+order in the Host authority.
+
+After compatible readers are installed and native identity/home/policy bindings
+are verified, the host operator provisions a new schema2 enrollment epoch from
+an actual owner decision. Live-effect acceptance remains separately approved;
+the decision need not be reissued after installation. All matching contracts
+and the compatible Core reader must be installed before any schema2 writer.
+Legacy charging/gates remain held. A clean current native store is not a general
+legacy-schema exception.
 The host checks declared installed providers and complete regular
 co-shipped files before dispatch. Source release proves no native enrollment,
 vehicle effect, real clock/cadence, route, channel acknowledgment or owner decision.
