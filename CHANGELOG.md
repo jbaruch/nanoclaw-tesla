@@ -1,5 +1,9 @@
 # Changelog
 
+### Align calendar charging with the native home clock (#2)
+
+Describe native-home evening, tomorrow-drive and notice timing, with contract v2, home-bound enrollment/state/notice2, legacy1 charging holds and complete notice discovery before effects/day lookup. Keep policy3/wire1, retained bytes, native owner enrollment, missing-CAS acceptance and the separate live-control test gate. Install compatible readers before a new enrollment epoch and pin the explicit cadence to home. No cadence or policy activates from this documentation. The required marker/serialized-state compatibility change takes a 0.x minor. This doc-only v2 authority predecessor publishes before the compatible Core reader; all matching installations still precede a real writer.
+
 ## 0.3.0 — 2026-10-29
 
 ### Add native calendar-aware charge planning (#2)
