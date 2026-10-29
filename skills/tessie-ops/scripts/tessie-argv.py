@@ -81,11 +81,15 @@ def decode_argv(token: str) -> tuple[Path, list[str]]:
     if value["script"] in {"tessie-late", "tessie-charge"}:
         skill = "tessie-running-late" if value["script"] == "tessie-late" else "tessie-charge"
         native = Path("/home/node/.claude/skills") / ("tessl__" + skill)
-        root = (
-            native / "scripts"
-            if native.exists() or native.is_symlink()
-            else root.parents[1] / skill / "scripts"
-        )
+        if native.exists() or native.is_symlink():
+            root = native / "scripts"
+        else:
+            owner = Path(__file__).absolute().parents[1]
+            if value["script"] == "tessie-charge" and not (
+                owner.name == "tessie-ops" and owner.parent.name == "skills"
+            ):
+                raise ValueError("input")
+            root = root.parents[1] / skill / "scripts"
         if not root.is_dir():
             raise ValueError("input")
         root = root.resolve()

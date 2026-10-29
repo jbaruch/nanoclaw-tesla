@@ -23,7 +23,13 @@ DEV_OPS = Path(__file__).resolve().parents[2] / "tessie-ops" / "scripts"
 
 
 def native_type() -> Any:
-    directory = OPS if OPS.parent.exists() or OPS.parent.is_symlink() else DEV_OPS
+    owner = Path(__file__).absolute().parents[1]
+    source_checkout = owner.name == "tessie-charge" and owner.parent.name == "skills"
+    # An installed prefixed skill never searches an unprefixed neighbor. The
+    # finite source-checkout layout alone admits the co-shipped development path.
+    directory = (
+        DEV_OPS if source_checkout and not (OPS.parent.exists() or OPS.parent.is_symlink()) else OPS
+    )
     directory = directory.resolve(strict=True)
     for name in ("tessie_core.py", "tessie_native.py"):
         target = directory / name

@@ -339,3 +339,79 @@ def test_real_encoded_estimate_shell_exec_never_evaluates_alias(tmp_path):
     assert done.returncode == 17
     assert json.loads(done.stdout) == args
     assert not (tmp_path / "shell-marker").exists()
+
+
+@pytest.mark.parametrize("impostor", [False, True])
+def test_installed_charge_missing_native_ops_holds_without_unprefixed_fallback(
+    tmp_path, monkeypatch, impostor
+):
+    import importlib.util
+    import shutil
+
+    skills = tmp_path / "skills"
+    installed = skills / "tessl__tessie-charge/scripts"
+    installed.mkdir(parents=True)
+    file = installed / "charge_ipc.py"
+    shutil.copyfile(ROOT / "skills/tessie-charge/scripts/charge_ipc.py", file)
+    marker = tmp_path / "impostor-imported"
+    foreign = skills / "tessie-ops/scripts"
+    if impostor:
+        foreign.mkdir(parents=True)
+        (foreign / "tessie_core.py").write_text("# unrelated local module\n")
+        (foreign / "tessie_native.py").write_text(
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('unexpected')\n"
+            "class NativeIPC: pass\n"
+        )
+    spec = importlib.util.spec_from_file_location("installed_charge_fixture", file)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "OPS", skills / "tessl__tessie-ops/scripts")
+    # A real standalone charging CLI has not imported tessie_core yet. Preserve
+    # that condition instead of letting the test runner's prior import mask it.
+    monkeypatch.delitem(sys.modules, "tessie_core", raising=False)
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+    with pytest.raises((ValueError, OSError)):
+        module.native_type()
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("impostor", [False, True])
+def test_installed_argv_missing_charge_holds_without_unprefixed_dispatch(
+    tmp_path, monkeypatch, impostor
+):
+    import shutil
+
+    adapter = load_script("tessie-ops", "tessie-argv")
+    installed = tmp_path / "skills/tessl__tessie-ops/scripts"
+    installed.mkdir(parents=True)
+    file = installed / "tessie-argv.py"
+    shutil.copyfile(ROOT / "skills/tessie-ops/scripts/tessie-argv.py", file)
+    monkeypatch.setattr(adapter, "__file__", str(file))
+    # The production fixed native path is absent; reproduce its supported
+    # installed namespace using a finite mapping only at that Path constructor.
+    from pathlib import Path
+
+    real_path = Path
+    fixed = real_path("/home/node/.claude/skills")
+    monkeypatch.setattr(
+        adapter,
+        "Path",
+        lambda value: tmp_path / "skills" if value == str(fixed) else real_path(value),
+    )
+    if impostor:
+        foreign = tmp_path / "skills/tessie-charge/scripts"
+        foreign.mkdir(parents=True)
+        (foreign / "tessie-charge.py").write_text("# unrelated module must not be dispatched\n")
+    import base64
+
+    token = (
+        base64.urlsafe_b64encode(
+            json.dumps({"script": "tessie-charge", "argv": ["status"]}).encode()
+        )
+        .decode()
+        .rstrip("=")
+    )
+    with pytest.raises(ValueError):
+        adapter.decode_argv(token)
