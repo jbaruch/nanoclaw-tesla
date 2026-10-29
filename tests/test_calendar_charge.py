@@ -378,8 +378,11 @@ def test_installed_charge_missing_native_ops_holds_without_unprefixed_fallback(
 
 
 @pytest.mark.parametrize("impostor", [False, True])
-def test_installed_argv_missing_charge_holds_without_unprefixed_dispatch(
-    tmp_path, monkeypatch, impostor
+@pytest.mark.parametrize(
+    "script, skill", [("tessie-charge", "tessie-charge"), ("tessie-late", "tessie-running-late")]
+)
+def test_installed_argv_missing_cross_skill_holds_without_unprefixed_dispatch(
+    tmp_path, monkeypatch, impostor, script, skill
 ):
     import shutil
 
@@ -401,15 +404,13 @@ def test_installed_argv_missing_charge_holds_without_unprefixed_dispatch(
         lambda value: tmp_path / "skills" if value == str(fixed) else real_path(value),
     )
     if impostor:
-        foreign = tmp_path / "skills/tessie-charge/scripts"
+        foreign = tmp_path / "skills" / skill / "scripts"
         foreign.mkdir(parents=True)
-        (foreign / "tessie-charge.py").write_text("# unrelated module must not be dispatched\n")
+        (foreign / (script + ".py")).write_text("# unrelated module must not be dispatched\n")
     import base64
 
     token = (
-        base64.urlsafe_b64encode(
-            json.dumps({"script": "tessie-charge", "argv": ["status"]}).encode()
-        )
+        base64.urlsafe_b64encode(json.dumps({"script": script, "argv": ["status"]}).encode())
         .decode()
         .rstrip("=")
     )

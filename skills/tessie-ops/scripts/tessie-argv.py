@@ -85,9 +85,7 @@ def decode_argv(token: str) -> tuple[Path, list[str]]:
             root = native / "scripts"
         else:
             owner = Path(__file__).absolute().parents[1]
-            if value["script"] == "tessie-charge" and not (
-                owner.name == "tessie-ops" and owner.parent.name == "skills"
-            ):
+            if not (owner.name == "tessie-ops" and owner.parent.name == "skills"):
                 raise ValueError("input")
             root = root.parents[1] / skill / "scripts"
         if not root.is_dir():
