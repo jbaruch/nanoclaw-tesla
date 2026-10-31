@@ -23,7 +23,7 @@ from contextlib import ExitStack
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, NoReturn
 from zoneinfo import ZoneInfo
 
@@ -56,6 +56,12 @@ RULE_DECLARATIONS = (
         "- Co-shipped pure validator target: ",
         "- Co-shipped pure validator target: "
         "`skills/tessie-brief/scripts/brief_ipc.py`, function `project(value)`.",
+    ),
+    (
+        "- Co-shipped capture-bound call target: ",
+        "- Co-shipped capture-bound call target: "
+        "`skills/tessie-brief/scripts/brief_ipc.py`, function "
+        "`call(expected_source_hashes=None)`.",
     ),
     (
         "- The executable takes ",
@@ -167,18 +173,48 @@ def _unique(pairs):
     return value
 
 
+_SOURCE_TARGETS = (
+    "skills/tessie-brief/scripts/tessie-brief.py",
+    "skills/tessie-brief/scripts/brief_ipc.py",
+    "skills/tessie-charge/scripts/charge_ipc.py",
+    "skills/tessie-ops/scripts/tessie_native.py",
+    "skills/tessie-ops/scripts/tessie_core.py",
+)
+_CAPTURE_PATHS = (
+    ".tessl-plugin/plugin.json",
+    "rules/vehicle-brief-policy.md",
+    "skills/tessie-brief/references/host-contract.md",
+    "skills/tessie-brief/SKILL.md",
+    *_SOURCE_TARGETS,
+)
+
+
+def _expected_capture(value: dict[str, str] | None):
+    if value is None:
+        return None
+    if type(value) is not dict:
+        _repair()
+    owned = value.copy()
+    if (
+        any(type(path) is not str for path in owned)
+        or set(owned) != set(_CAPTURE_PATHS)
+        or any(
+            type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+            for digest in owned.values()
+        )
+    ):
+        _repair()
+    # Callers cannot weaken a live binding by mutating their original inventory.
+    return MappingProxyType(owned)
+
+
 class _BriefProvider:
     """One fixed provider snapshot, never a caller-selected transport or grant."""
 
-    targets = (
-        "skills/tessie-brief/scripts/tessie-brief.py",
-        "skills/tessie-brief/scripts/brief_ipc.py",
-        "skills/tessie-charge/scripts/charge_ipc.py",
-        "skills/tessie-ops/scripts/tessie_native.py",
-        "skills/tessie-ops/scripts/tessie_core.py",
-    )
+    targets = _SOURCE_TARGETS
 
-    def __init__(self):
+    def __init__(self, expected_source_hashes: dict[str, str] | None = None):
+        self.expected = _expected_capture(expected_source_hashes)
         own = Path(__file__).absolute()
         skill = own.parents[1]
         self.source = (
@@ -202,7 +238,7 @@ class _BriefProvider:
     def capture(self):
         rule = "rules/vehicle-brief-policy.md"
         reference = "skills/tessie-brief/references/host-contract.md"
-        paths = (".tessl-plugin/plugin.json", rule, reference, *self.targets)
+        paths = _CAPTURE_PATHS
         values, binding = {}, {}
         try:
             for relative in paths:
@@ -237,6 +273,11 @@ class _BriefProvider:
                 binding["native:" + relative] = token
             if self.target(self.targets[1]) != self.own:
                 _repair()
+            if self.expected is not None and any(
+                hashlib.sha256(values[relative]).hexdigest() != self.expected[relative]
+                for relative in paths
+            ):
+                _repair()
             return binding, {relative: values[relative] for relative in self.targets}
         except OSError as error:
             raise ValueError(
@@ -249,8 +290,8 @@ class _BriefProvider:
             _repair()
 
 
-def native_type() -> Any:
-    binding = _BriefProvider()
+def native_type(*, expected_source_hashes: dict[str, str] | None = None) -> Any:
+    binding = _BriefProvider(expected_source_hashes)
     core_path = "skills/tessie-ops/scripts/tessie_core.py"
     native_path = "skills/tessie-ops/scripts/tessie_native.py"
     charge_path = "skills/tessie-charge/scripts/charge_ipc.py"
@@ -500,8 +541,12 @@ def project(value: object) -> dict[str, Any]:
     return {**result, "lines": lines}
 
 
-def call() -> dict[str, Any]:
-    bridge = native_type()()
+def call(*, expected_source_hashes: dict[str, str] | None = None) -> dict[str, Any]:
+    bridge = (
+        native_type()
+        if expected_source_hashes is None
+        else native_type(expected_source_hashes=expected_source_hashes)
+    )()
     bridge.message_type = "tessie_brief_request"
     reply = bridge.call({"schema_version": 1, "operation": "summary"}, 200)
     if reply.get("status") != 200:

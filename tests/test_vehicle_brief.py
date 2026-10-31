@@ -295,6 +295,7 @@ def _installed_provider(tmp_path, monkeypatch):
         ".tessl-plugin/plugin.json",
         "rules/vehicle-brief-policy.md",
         "skills/tessie-brief/references/host-contract.md",
+        "skills/tessie-brief/SKILL.md",
         *targets,
     ):
         file = provider / relative
@@ -443,6 +444,7 @@ def _source_provider(tmp_path, monkeypatch):
         ".tessl-plugin/plugin.json",
         "rules/vehicle-brief-policy.md",
         "skills/tessie-brief/references/host-contract.md",
+        "skills/tessie-brief/SKILL.md",
         "skills/tessie-brief/scripts/tessie-brief.py",
         "skills/tessie-brief/scripts/brief_ipc.py",
         "skills/tessie-charge/scripts/charge_ipc.py",
@@ -453,7 +455,7 @@ def _source_provider(tmp_path, monkeypatch):
         file = root / relative
         file.parent.mkdir(parents=True, exist_ok=True)
         file.write_bytes((original / relative).read_bytes())
-    monkeypatch.setattr(owner, "__file__", str(root / files[4]))
+    monkeypatch.setattr(owner, "__file__", str(root / "skills/tessie-brief/scripts/brief_ipc.py"))
     monkeypatch.setattr(owner, "INSTALLED", tmp_path / "absent/scripts")
     monkeypatch.setattr(owner, "DEV", root / "skills/tessie-charge/scripts", raising=False)
     monkeypatch.setattr(sys, "path", list(sys.path))
@@ -558,3 +560,110 @@ def test_real_private_factory_does_not_replace_global_provider_modules_or_import
     assert {name: sys.modules.get(name) for name in before} == before
     assert sys.path == path
     assert importlib.util.spec_from_file_location is loader
+
+
+CAPTURE_PATHS = (
+    ".tessl-plugin/plugin.json",
+    "rules/vehicle-brief-policy.md",
+    "skills/tessie-brief/references/host-contract.md",
+    "skills/tessie-brief/SKILL.md",
+    "skills/tessie-brief/scripts/tessie-brief.py",
+    "skills/tessie-brief/scripts/brief_ipc.py",
+    "skills/tessie-charge/scripts/charge_ipc.py",
+    "skills/tessie-ops/scripts/tessie_native.py",
+    "skills/tessie-ops/scripts/tessie_core.py",
+)
+
+
+def capture_hashes(provider):
+    import hashlib
+
+    return {
+        relative: hashlib.sha256((provider / relative).read_bytes()).hexdigest()
+        for relative in CAPTURE_PATHS
+    }
+
+
+@pytest.mark.parametrize("relative", CAPTURE_PATHS)
+def test_initial_capture_mismatch_holds_before_any_transport_compile(
+    tmp_path, monkeypatch, relative
+):
+    from pathlib import Path
+
+    owner, provider, skills = _installed_provider(tmp_path, monkeypatch)
+    expected = capture_hashes(provider)
+    changed = provider / relative
+    changed.write_bytes(changed.read_bytes() + b"\n")
+    if relative in CAPTURE_PATHS[4:]:
+        _, skill, *parts = Path(relative).parts
+        (skills / ("tessl__" + skill) / Path(*parts)).write_bytes(changed.read_bytes())
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("An unexpected capture must hold before compiling transport")
+
+    monkeypatch.setattr(owner.importlib.util, "module_from_spec", forbidden)
+    with pytest.raises(ValueError):
+        owner.call(expected_source_hashes=expected)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "extra",
+        "nonhex",
+        "uppercase",
+        "boolean",
+        "list",
+        "key-subclass",
+        "value-subclass",
+    ],
+)
+def test_expected_capture_requires_exact_known_inventory(tmp_path, monkeypatch, change):
+    owner, provider, _ = _installed_provider(tmp_path, monkeypatch)
+    expected = json.loads(json.dumps(capture_hashes(provider)))
+    if change == "missing":
+        expected.pop(CAPTURE_PATHS[0])
+    if change == "extra":
+        expected["caller/selected.py"] = "a" * 64
+    if change == "nonhex":
+        expected[CAPTURE_PATHS[0]] = "z" * 64
+    if change == "uppercase":
+        expected[CAPTURE_PATHS[0]] = "A" * 64
+    if change == "boolean":
+        expected[CAPTURE_PATHS[0]] = True
+    if change in {"key-subclass", "value-subclass"}:
+
+        class DerivedString(str):
+            pass
+
+        if change == "key-subclass":
+            digest = expected.pop(CAPTURE_PATHS[0])
+            expected[DerivedString(CAPTURE_PATHS[0])] = digest
+        else:
+            expected[CAPTURE_PATHS[0]] = DerivedString(expected[CAPTURE_PATHS[0]])
+    if change == "list":
+        expected = list(expected)
+    with pytest.raises(ValueError):
+        owner.call(expected_source_hashes=expected)
+
+
+def test_expected_capture_is_owned_and_normal_call_remains_compatible(tmp_path, monkeypatch):
+    owner, provider, _ = _installed_provider(tmp_path, monkeypatch)
+    expected = capture_hashes(provider)
+    bridge_type = owner.native_type(expected_source_hashes=expected)
+    expected[CAPTURE_PATHS[0]] = "0" * 64
+    bridge = bridge_type()
+    assert bridge.call({"schema_version": 1, "operation": "summary"}, 200)["status"] == 200
+    assert owner.call()["lines"] == []
+    assert owner.call(expected_source_hashes=capture_hashes(provider))["lines"] == []
+
+
+def test_matching_hashes_never_replace_provider_identity_admission(tmp_path, monkeypatch):
+    owner, provider, _ = _installed_provider(tmp_path, monkeypatch)
+    file = provider / ".tessl-plugin/plugin.json"
+    value = json.loads(file.read_text())
+    value["name"] = "jbaruch/impostor"
+    file.write_text(json.dumps(value))
+    with pytest.raises(ValueError):
+        owner.call(expected_source_hashes=capture_hashes(provider))
