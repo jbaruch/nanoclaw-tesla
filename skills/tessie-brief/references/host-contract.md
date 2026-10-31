@@ -56,3 +56,8 @@ protected native home. Both dependent checks remain unknown for every vehicle;
 proved independent health lines survive. No fallback timezone is supplied.
 Half-null or falsely complete dependent coverage refuses. Host data remains
 bounded at 128 KiB; the complete fixed rendered envelope is bounded at 256 KiB.
+
+Brief aliases are nonempty and bounded at 100 UTF-16 code units (at most
+300 UTF-8 bytes), matching native admission and the saved reader. Oversized or
+unsafe upstream aliases hold the complete summary; never truncate or drop a
+vehicle. Brief-only VIN-free ordinal labels do not change native selectors.

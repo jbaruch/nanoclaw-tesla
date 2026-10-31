@@ -164,6 +164,7 @@ def project(value: object) -> dict[str, Any]:
             or not alias.strip()
             or len(alias) > 100
             or any(unicodedata.category(c) in {"Cc", "Cf", "Cs", "Zl", "Zp"} for c in alias)
+            or len(alias.encode("utf-16-le")) > 200
             or alias in aliases
         ):
             raise ValueError("Inspect the current native vehicle aliases.")

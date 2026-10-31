@@ -222,3 +222,12 @@ def test_cli_refuses_oversized_rendered_output_without_partial_stdout(monkeypatc
     monkeypatch.setattr(cli, "call", lambda: {"lines": ["x" * (256 * 1024)]})
     assert cli.main() == 1
     assert capsys.readouterr().out == ""
+
+
+def test_alias_bound_matches_native_hundred_utf16_units():
+    value = summary()
+    value["vehicles"][0]["alias"] = "🚗" * 50
+    assert brief_ipc.project(value)["vehicles"][0]["alias"] == "🚗" * 50
+    value["vehicles"][0]["alias"] += "🚗"
+    with pytest.raises(ValueError):
+        brief_ipc.project(value)
