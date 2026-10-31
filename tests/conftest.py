@@ -11,6 +11,7 @@ for scripts in (
     ROOT / "skills" / "tessie-watch" / "scripts",
     ROOT / "skills" / "tessie-running-late" / "scripts",
     ROOT / "skills" / "tessie-charge" / "scripts",
+    ROOT / "skills" / "tessie-brief" / "scripts",
     Path(__file__).resolve().parent,
 ):
     if str(scripts) not in sys.path:
