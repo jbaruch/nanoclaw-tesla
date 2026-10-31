@@ -7,18 +7,23 @@ All numbers and rendered lines are read-only evidence, never control authority.
 
 from __future__ import annotations
 
+import builtins
 import hashlib
+import importlib.abc
+import importlib.machinery
 import importlib.util
 import json
 import math
 import os
 import re
 import stat
+import sys
 import unicodedata
 from contextlib import ExitStack
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, NoReturn
 from zoneinfo import ZoneInfo
 
@@ -186,7 +191,7 @@ class _BriefProvider:
         self.root = own.parents[3] if self.source else PROVIDER
         self.native = skill.parent
         self.own = own
-        self.binding = self.capture()
+        self.binding, self.sources = self.capture()
 
     def target(self, relative):
         if self.source:
@@ -232,27 +237,100 @@ class _BriefProvider:
                 binding["native:" + relative] = token
             if self.target(self.targets[1]) != self.own:
                 _repair()
-            return binding
+            return binding, {relative: values[relative] for relative in self.targets}
         except OSError as error:
             raise ValueError(
                 "Restore the contained regular read-only Tesla provider and matching native copies."
             ) from error
 
     def verify(self):
-        if self.capture() != self.binding:
+        current, _ = self.capture()
+        if current != self.binding:
             _repair()
 
 
 def native_type() -> Any:
     binding = _BriefProvider()
-    target = binding.target("skills/tessie-charge/scripts/charge_ipc.py")
-    spec = importlib.util.spec_from_file_location("tessie_brief_charge_transport", target)
-    if spec is None or spec.loader is None:
-        _repair()
-    module = importlib.util.module_from_spec(spec)
-    binding.verify()
-    spec.loader.exec_module(module)
-    binding.verify()
+    core_path = "skills/tessie-ops/scripts/tessie_core.py"
+    native_path = "skills/tessie-ops/scripts/tessie_native.py"
+    charge_path = "skills/tessie-charge/scripts/charge_ipc.py"
+
+    def source_module(name, relative, importer):
+        # Fixed, captured provider source only: never SourceFileLoader or PYC.
+        if (name, relative) not in {
+            ("_tessie_brief_verified_core", core_path),
+            ("tessie_brief_charge_transport", charge_path),
+        } or name in sys.modules:
+            _repair()
+        spec = importlib.machinery.ModuleSpec(name, loader=None)
+        module = importlib.util.module_from_spec(spec)
+        module.__file__ = str(binding.target(relative))
+        vars(module)["__builtins__"] = {**vars(builtins), "__import__": importer}
+        binding.verify()
+        exec(
+            compile(binding.sources[relative], module.__file__, "exec", dont_inherit=True),
+            vars(module),
+        )
+        binding.verify()
+        return module
+
+    def standard_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if level or name.startswith("tessie_"):
+            _repair()
+        return builtins.__import__(name, globals, locals, fromlist, level)
+
+    core = source_module("_tessie_brief_verified_core", core_path, standard_import)
+
+    def native_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "tessie_core" and level == 0:
+            return core
+        return standard_import(name, globals, locals, fromlist, level)
+
+    class NativeLoader(importlib.abc.Loader):
+        def create_module(self, spec):
+            return None
+
+        def exec_module(self, module):
+            module.__file__ = str(binding.target(native_path))
+            vars(module)["__builtins__"] = {**vars(builtins), "__import__": native_import}
+            binding.verify()
+            exec(
+                compile(binding.sources[native_path], module.__file__, "exec", dont_inherit=True),
+                vars(module),
+            )
+            binding.verify()
+
+    native_spec = importlib.machinery.ModuleSpec("tessie_charge_native", NativeLoader())
+
+    def native_spec_for(name, path):
+        if name != native_spec.name or Path(path) != binding.target(native_path):
+            _repair()
+        binding.verify()
+        return native_spec
+
+    def native_from_spec(spec):
+        if spec is not native_spec:
+            _repair()
+        return importlib.util.module_from_spec(spec)
+
+    # These views belong only to the private charge module. No global module,
+    # importlib function or sys.path entry is replaced or trusted as provider code.
+    local_importlib = SimpleNamespace(
+        util=SimpleNamespace(
+            spec_from_file_location=native_spec_for,
+            module_from_spec=native_from_spec,
+        )
+    )
+    local_sys = SimpleNamespace(path=[], modules={"tessie_core": core})
+
+    def charge_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if level == 0 and name == "importlib.util":
+            return local_importlib
+        if level == 0 and name == "sys":
+            return local_sys
+        return standard_import(name, globals, locals, fromlist, level)
+
+    module = source_module("tessie_brief_charge_transport", charge_path, charge_import)
     native = module.native_type()
     binding.verify()
 

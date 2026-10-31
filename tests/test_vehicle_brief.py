@@ -430,3 +430,131 @@ def test_oversized_json_integer_is_a_value_refusal_not_float_overflow(field):
     assert len(wire.encode()) < 128 * 1024
     with pytest.raises(ValueError):
         brief_ipc.project(json.loads(wire))
+
+
+def _source_provider(tmp_path, monkeypatch):
+    import sys
+    from pathlib import Path
+
+    owner = load_script("tessie-brief", "brief_ipc")
+    original = Path(__file__).resolve().parents[1]
+    root = tmp_path / "source"
+    files = (
+        ".tessl-plugin/plugin.json",
+        "rules/vehicle-brief-policy.md",
+        "skills/tessie-brief/references/host-contract.md",
+        "skills/tessie-brief/scripts/tessie-brief.py",
+        "skills/tessie-brief/scripts/brief_ipc.py",
+        "skills/tessie-charge/scripts/charge_ipc.py",
+        "skills/tessie-ops/scripts/tessie_native.py",
+        "skills/tessie-ops/scripts/tessie_core.py",
+    )
+    for relative in files:
+        file = root / relative
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_bytes((original / relative).read_bytes())
+    monkeypatch.setattr(owner, "__file__", str(root / files[4]))
+    monkeypatch.setattr(owner, "INSTALLED", tmp_path / "absent/scripts")
+    monkeypatch.setattr(owner, "DEV", root / "skills/tessie-charge/scripts", raising=False)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.delitem(sys.modules, "tessie_core", raising=False)
+    return owner, root
+
+
+def _evil_same_size(raw, marker):
+    import ast
+
+    tree = ast.parse(raw)
+    # Fixture payload: preserve the complete real module APIs, shorten only its
+    # module docstring/comments, then append an observable inert import witness.
+    if isinstance(tree.body[0], ast.Expr) and isinstance(tree.body[0].value, ast.Constant):
+        tree.body.pop(0)
+    code = (
+        ast.unparse(tree)
+        + "\nfrom pathlib import Path\nPath("
+        + repr(str(marker))
+        + ").write_text('unverified code executed')\n"
+    ).encode()
+    assert len(code) < len(raw)
+    return code + b" " * (len(raw) - len(code))
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "skills/tessie-charge/scripts/charge_ipc.py",
+        "skills/tessie-ops/scripts/tessie_native.py",
+        "skills/tessie-ops/scripts/tessie_core.py",
+    ],
+)
+def test_matching_timestamp_size_pyc_never_executes_in_complete_transport(
+    tmp_path, monkeypatch, relative
+):
+    import os
+    import py_compile
+
+    owner, root = _source_provider(tmp_path, monkeypatch)
+    target = root / relative
+    original = target.read_bytes()
+    meta = target.stat()
+    marker = tmp_path / "cache-code-executed"
+    target.write_bytes(_evil_same_size(original, marker))
+    os.utime(target, ns=(meta.st_atime_ns, meta.st_mtime_ns))
+    py_compile.compile(
+        str(target), doraise=True, invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP
+    )
+    target.write_bytes(original)
+    os.utime(target, ns=(meta.st_atime_ns, meta.st_mtime_ns))
+    assert target.stat().st_size == meta.st_size
+    assert target.stat().st_mtime_ns == meta.st_mtime_ns
+    owner.native_type()  # Real charge -> native -> core composition, no IPC call.
+    assert not marker.exists()
+
+
+def test_swap_restore_during_real_path_code_load_never_executes_replacement(tmp_path, monkeypatch):
+    import importlib.machinery
+    import shutil
+
+    owner, root = _source_provider(tmp_path, monkeypatch)
+    target = root / "skills/tessie-charge/scripts/charge_ipc.py"
+    marker = tmp_path / "swapped-code-executed"
+    original_dir = target.parent
+    replacement = tmp_path / "replacement"
+    shutil.copytree(original_dir, replacement, ignore=shutil.ignore_patterns("__pycache__"))
+    (replacement / target.name).write_bytes(_evil_same_size(target.read_bytes(), marker))
+    retired = tmp_path / "held-original"
+    get_code = importlib.machinery.SourceFileLoader.get_code
+    attempts = []
+
+    def swap(loader, fullname):
+        if loader.path != str(target):
+            return get_code(loader, fullname)
+        attempts.append(fullname)
+        original_dir.rename(retired)
+        replacement.rename(original_dir)
+        try:
+            return get_code(loader, fullname)
+        finally:
+            original_dir.rename(replacement)
+            retired.rename(original_dir)
+
+    monkeypatch.setattr(importlib.machinery.SourceFileLoader, "get_code", swap)
+    owner.native_type()
+    assert not marker.exists()
+    assert attempts == []  # The fixed byte factory never reopens provider code.
+
+
+def test_real_private_factory_does_not_replace_global_provider_modules_or_imports(monkeypatch):
+    import importlib.util
+    import sys
+
+    before = {
+        name: sys.modules.get(name)
+        for name in ("tessie_core", "tessie_charge_native", "tessie_brief_charge_transport")
+    }
+    path = list(sys.path)
+    loader = importlib.util.spec_from_file_location
+    brief_ipc.native_type()
+    assert {name: sys.modules.get(name) for name in before} == before
+    assert sys.path == path
+    assert importlib.util.spec_from_file_location is loader

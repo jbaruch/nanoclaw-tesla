@@ -20,7 +20,8 @@ Exit codes shared by every CLI: 0 success, 1 failure, 2 usage (argparse),
 3 unconfirmed control, 4 denied by allowlist or chat authorization.
 """
 
-from __future__ import annotations
+# Eager Python 3.11 annotations let the fixed brief factory execute verified
+# source privately: HttpResponse does not need a global module-cache entry.
 
 import json
 import re
