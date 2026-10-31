@@ -12,6 +12,7 @@ import math
 import stat
 import unicodedata
 from datetime import datetime
+from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -101,8 +102,11 @@ def alert_text(kind: str, value: object) -> str:
         number(d["expected_departure_percent"], 0, 100)
         integer(d["required_percent"], 0, 100)
         integer(d["drive_count"], 1, 2000)
-        rounded = math.ceil(shortfall * 10) / 10
-        return f"по оценке на сегодняшние поездки не хватает {rounded:g} кВт·ч"
+        # Round the validated JSON number upward without losing precision in a
+        # binary multiply. Do not guess or erase computed-input noise.
+        rounded = Decimal(repr(shortfall)).quantize(Decimal("0.1"), rounding=ROUND_CEILING)
+        amount = format(rounded, "f").removesuffix(".0")
+        return f"по оценке на сегодняшние поездки не хватает {amount} кВт·ч"
     if kind == "tire_warning":
         d = exact(value, {"positions"})
         positions = d["positions"]

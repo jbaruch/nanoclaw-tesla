@@ -231,3 +231,39 @@ def test_alias_bound_matches_native_hundred_utf16_units():
     value["vehicles"][0]["alias"] += "🚗"
     with pytest.raises(ValueError):
         brief_ipc.project(value)
+
+
+@pytest.mark.parametrize(
+    ("amount", "rendered"),
+    [
+        (1.1, "1.1"),
+        (0.3, "0.3"),
+        (20.4, "20.4"),
+        (2, "2"),
+        (1.7000000000000002, "1.8"),
+        (1.9000000000000001, "2"),
+        (0.000000001, "0.1"),
+        (10000000, "10000000"),
+    ],
+)
+def test_decimal_ceiling_of_native_json_shortfall_preserves_original_evidence(amount, rendered):
+    value = summary()
+    value["vehicles"][0]["alerts"] = [
+        {
+            "kind": "insufficient_charge",
+            "detail": {
+                "shortfall_kwh": amount,
+                "expected_departure_percent": 20,
+                "required_percent": 55,
+                "drive_count": 1,
+            },
+        }
+    ]
+    # Validate the actual native JSON number, without inferred epsilon/noise cleanup.
+    wire = json.loads(json.dumps(value, allow_nan=False))
+    original = copy.deepcopy(wire)
+    result = brief_ipc.project(wire)
+    assert result["lines"] == [
+        f"Synthetic Car: по оценке на сегодняшние поездки не хватает {rendered} кВт·ч."
+    ]
+    assert {key: result[key] for key in original} == original
