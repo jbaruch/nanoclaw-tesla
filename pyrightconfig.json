@@ -12,7 +12,8 @@
     "skills/tessie-ops/scripts",
     "skills/tessie-watch/scripts",
     "skills/tessie-running-late/scripts",
-    "skills/tessie-charge/scripts"
+    "skills/tessie-charge/scripts",
+    "skills/tessie-brief/scripts"
   ],
   "pythonVersion": "3.11",
   "typeCheckingMode": "basic",

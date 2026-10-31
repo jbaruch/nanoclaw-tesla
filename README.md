@@ -6,7 +6,7 @@ A NanoClaw overlay plugin that reads and controls Tesla vehicles through the [Te
 
 ## Status
 
-This is the Tesla1 foundation ([issue #1](https://github.com/jbaruch/nanoclaw-tesla/issues/1)): the Tessie client, vehicle allowlist, chat authorization, cached reads, confirmed controls, a no-wake health check, packaging and CI. Calendar charging ([#2](https://github.com/jbaruch/nanoclaw-tesla/issues/2)) adds a protected standing-owner workflow and reusable measured-energy estimates; enrollment and native acceptance remain separate. Tesla3–6 remain separate work. Running-late ([#7](https://github.com/jbaruch/nanoclaw-tesla/issues/7)) adds the event-bound consumer and protected host companion; source publication still requires installed authority and actual native acceptance. Solar and Powerwall ([#8](https://github.com/jbaruch/nanoclaw-tesla/issues/8)) stays deferred.
+This is the Tesla1 foundation ([issue #1](https://github.com/jbaruch/nanoclaw-tesla/issues/1)): the Tessie client, vehicle allowlist, chat authorization, cached reads, confirmed controls, a no-wake health check, packaging and CI. Calendar charging ([#2](https://github.com/jbaruch/nanoclaw-tesla/issues/2)) adds a protected standing-owner workflow and reusable measured-energy estimates; enrollment and native acceptance remain separate. The read-only vehicle morning summary ([#4](https://github.com/jbaruch/nanoclaw-tesla/issues/4)) integrates with the optional Admin gather source; generic firmware-active coverage and native acceptance remain open. Tesla3/5/6 remain separate work. Running-late ([#7](https://github.com/jbaruch/nanoclaw-tesla/issues/7)) adds the event-bound consumer and protected host companion; source publication still requires installed authority and actual native acceptance. Solar and Powerwall ([#8](https://github.com/jbaruch/nanoclaw-tesla/issues/8)) stays deferred.
 
 Merged source is not an installed plugin and a passing test suite is not a live smoke test; see `docs/setup.md` for the owner steps that remain.
 
@@ -26,12 +26,14 @@ Merged source is not an installed plugin and a passing test suite is not a live 
 | `tessie-ops` | Action router: list vehicles, inspect the allowlist, read state, read location, preview and run controls, confirm state, tag drives |
 | `tessie-charge` | Native next-day charge planning, private status and reusable measured departure estimates; cadence remains unenrolled |
 | `tessie-running-late` | Event-specific approval, native three-minute polling and a shared two-message limit across owner and approved recipient |
+| `tessie-brief` | Read-only deterministic vehicle lines for morning gather; explicit unknown coverage, no vehicle wake or controls |
 | `tessie-watch` | Daily precheck that wakes the agent only for a low unplugged battery, a credential or API failure, or unreadable state |
 
 ## Rules
 
 | Rule | Purpose |
 | --- | --- |
+| `rules/vehicle-brief-policy.md` | Fixed cached vehicle evidence, literal brief lines and explicit unknown coverage |
 | `rules/calendar-charge-policy.md` | Native standing owner enrollment, retained baseline/uncertainty and one evening notice |
 | `rules/running-late-approval.md` | Native per-event delegation, fixed host transport and the shared delivery budget |
 | `rules/tessie-credentials.md` | The token lives in the vault; the agent never holds, requests or prints it |
