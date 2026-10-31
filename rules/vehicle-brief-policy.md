@@ -11,6 +11,7 @@ applyTo: "skills/tessie-brief/**, skills/morning-brief/** — when producing, co
 - The authored scope is `skills/tessie-brief/` and the optional `jbaruch/nanoclaw-admin` morning-brief source that consumes it.
 - Co-shipped executable target: `skills/tessie-brief/scripts/tessie-brief.py`.
 - Co-shipped pure validator target: `skills/tessie-brief/scripts/brief_ipc.py`, function `project(value)`.
+- Co-shipped capture-bound call target: `skills/tessie-brief/scripts/brief_ipc.py`, function `call(expected_source_hashes=None)`.
 - The executable takes no arguments and returns exactly `{wake_agent:false,data}` on exit 0; exit 1 has fixed stderr and no stdout.
 - `project(value)` accepts the Host schema1 data object without `lines`, validates its complete fields and returns that object plus canonical literal lines; invalid supported input raises `ValueError` or an unknown-zone error, with no provider I/O.
 - The fixed native transport closure is the same provider's `skills/tessie-charge/scripts/charge_ipc.py` and `skills/tessie-ops/scripts/tessie_native.py` plus `skills/tessie-ops/scripts/tessie_core.py`.

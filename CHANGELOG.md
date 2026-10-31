@@ -1,5 +1,9 @@
 # Changelog
 
+### Bind nested brief execution to the initial source capture (Admin #683)
+
+Add the optional provider-owned expected-capture precondition for the fixed read-only brief call. Match all nine authority/code files before transport compilation and every existing fence; retain default CLI behavior, native identity checks, wire formats and no-effect boundaries.
+
 ## 0.5.0 — 2026-10-31
 
 ### Add cached vehicle observations to morning briefs (#4)
