@@ -7,18 +7,23 @@ All numbers and rendered lines are read-only evidence, never control authority.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import math
+import os
+import re
 import stat
 import unicodedata
+from contextlib import ExitStack
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from zoneinfo import ZoneInfo
 
 INSTALLED = Path("/home/node/.claude/skills/tessl__tessie-charge/scripts")
-DEV = Path(__file__).resolve().parents[2] / "tessie-charge" / "scripts"
+PROVIDER = Path("/home/node/.claude/.tessl/tiles/jbaruch/nanoclaw-tesla")
 CHECKS = ("overnight_unplugged", "insufficient_charge", "tire_warning", "open_vehicle_alert")
 TIRES = {
     "front_left": "переднее левое",
@@ -28,25 +33,243 @@ TIRES = {
 }
 
 
-def native_type() -> Any:
-    owner = Path(__file__).absolute().parents[1]
-    source = owner.name == "tessie-brief" and owner.parent.name == "skills"
-    directory = (
-        DEV
-        if source and not (INSTALLED.parent.exists() or INSTALLED.parent.is_symlink())
-        else INSTALLED
+RULE_DECLARATIONS = (
+    (
+        "- The provider is ",
+        "- The provider is `jbaruch/nanoclaw-tesla`.",
+    ),
+    (
+        "- The authored scope is ",
+        "- The authored scope is `skills/tessie-brief/` and the optional "
+        "`jbaruch/nanoclaw-admin` morning-brief source that consumes it.",
+    ),
+    (
+        "- Co-shipped executable target: ",
+        "- Co-shipped executable target: `skills/tessie-brief/scripts/tessie-brief.py`.",
+    ),
+    (
+        "- Co-shipped pure validator target: ",
+        "- Co-shipped pure validator target: "
+        "`skills/tessie-brief/scripts/brief_ipc.py`, function `project(value)`.",
+    ),
+    (
+        "- The executable takes ",
+        "- The executable takes no arguments and returns exactly "
+        "`{wake_agent:false,data}` on exit 0; exit 1 has fixed stderr and no stdout.",
+    ),
+    (
+        "- `project(value)` accepts ",
+        "- `project(value)` accepts the Host schema1 data object without `lines`, "
+        "validates its complete fields and returns that object plus canonical literal"
+        " lines; invalid supported input raises `ValueError` or an unknown-zone "
+        "error, with no provider I/O.",
+    ),
+    (
+        "- The fixed native transport closure is ",
+        "- The fixed native transport closure is the same provider's "
+        "`skills/tessie-charge/scripts/charge_ipc.py` and "
+        "`skills/tessie-ops/scripts/tessie_native.py` plus "
+        "`skills/tessie-ops/scripts/tessie_core.py`.",
+    ),
+    (
+        "- Read the complete ",
+        "- Read the complete `skills/tessie-brief/references/host-contract.md` in "
+        "this installed provider before producing or using summary output.",
+    ),
+)
+
+
+def _declares_rule(raw):
+    lines = [line.strip() for line in raw.decode("utf-8").splitlines()]
+    return all(
+        [line for line in lines if line.startswith(prefix)] == [expected]
+        for prefix, expected in RULE_DECLARATIONS
     )
-    directory = directory.resolve(strict=True)
-    target = directory / "charge_ipc.py"
-    meta = target.lstat()
-    if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1:
-        raise ValueError("Reinstall the complete same-provider native transport.")
+
+
+def _repair() -> NoReturn:
+    raise ValueError(
+        "Reinstall the complete same-provider read-only vehicle brief; preserve other sources."
+    )
+
+
+def _identity(meta):
+    return (meta.st_dev, meta.st_ino, meta.st_mode, meta.st_uid, meta.st_gid)
+
+
+def _file_snapshot(file: Path):
+    """Fixed public source read through held, no-follow component descriptors."""
+    if not file.is_absolute() or ".." in file.parts:
+        _repair()
+    with ExitStack() as opened:
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        fd = os.open("/", flags)
+        opened.callback(os.close, fd)
+        parents: list[tuple[int, int | None, str, os.stat_result]] = [(fd, None, "/", os.fstat(fd))]
+        for name in file.parts[1:-1]:
+            parent = fd
+            fd = os.open(name, flags, dir_fd=parent)
+            opened.callback(os.close, fd)
+            parents.append((fd, parent, name, os.fstat(fd)))
+        parent = fd
+        fd = os.open(file.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        opened.callback(os.close, fd)
+        before = os.fstat(fd)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or not 0 < before.st_size <= 128 * 1024
+        ):
+            _repair()
+        raw = os.read(fd, before.st_size + 1)
+
+        def stamp(meta):
+            return (
+                _identity(meta),
+                meta.st_nlink,
+                meta.st_size,
+                meta.st_mtime_ns,
+                meta.st_ctime_ns,
+            )
+
+        if (
+            len(raw) != before.st_size
+            or stamp(before) != stamp(os.fstat(fd))
+            or stamp(before) != stamp(os.stat(file.name, dir_fd=parent, follow_symlinks=False))
+        ):
+            _repair()
+        for held, parent, name, meta in parents:
+            named = (
+                os.stat(name, dir_fd=parent, follow_symlinks=False)
+                if parent is not None
+                else os.lstat("/")
+            )
+            if _identity(meta) != _identity(os.fstat(held)) or _identity(meta) != _identity(named):
+                _repair()
+        return raw, (
+            stamp(before),
+            tuple(_identity(meta) for _, _, _, meta in parents),
+            hashlib.sha256(raw).hexdigest(),
+        )
+
+
+def _unique(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            _repair()
+        value[key] = item
+    return value
+
+
+class _BriefProvider:
+    """One fixed provider snapshot, never a caller-selected transport or grant."""
+
+    targets = (
+        "skills/tessie-brief/scripts/tessie-brief.py",
+        "skills/tessie-brief/scripts/brief_ipc.py",
+        "skills/tessie-charge/scripts/charge_ipc.py",
+        "skills/tessie-ops/scripts/tessie_native.py",
+        "skills/tessie-ops/scripts/tessie_core.py",
+    )
+
+    def __init__(self):
+        own = Path(__file__).absolute()
+        skill = own.parents[1]
+        self.source = (
+            skill.name == "tessie-brief"
+            and skill.parent.name == "skills"
+            and not (INSTALLED.parent.exists() or INSTALLED.parent.is_symlink())
+        )
+        if not self.source and skill.name != "tessl__tessie-brief":
+            _repair()
+        self.root = own.parents[3] if self.source else PROVIDER
+        self.native = skill.parent
+        self.own = own
+        self.binding = self.capture()
+
+    def target(self, relative):
+        if self.source:
+            return self.root / relative
+        _, skill, *parts = Path(relative).parts
+        return self.native / ("tessl__" + skill) / Path(*parts)
+
+    def capture(self):
+        rule = "rules/vehicle-brief-policy.md"
+        reference = "skills/tessie-brief/references/host-contract.md"
+        paths = (".tessl-plugin/plugin.json", rule, reference, *self.targets)
+        values, binding = {}, {}
+        try:
+            for relative in paths:
+                values[relative], binding[relative] = _file_snapshot(self.root / relative)
+            manifest = json.loads(values[paths[0]], object_pairs_hook=_unique)
+            if (
+                not isinstance(manifest, dict)
+                or manifest.get("name") != "jbaruch/nanoclaw-tesla"
+                or not isinstance(manifest.get("version"), str)
+                or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", manifest["version"])
+            ):
+                _repair()
+            for field, required in [
+                ("skills", {"skills/tessie-brief", "skills/tessie-charge", "skills/tessie-ops"}),
+                ("rules", {rule, "rules/nanoclaw-skill-root.md"}),
+            ]:
+                entries = manifest.get(field)
+                if (
+                    not isinstance(entries, list)
+                    or not all(isinstance(item, str) for item in entries)
+                    or not required.issubset(entries)
+                ):
+                    _repair()
+            if not _declares_rule(values[rule]) or re.findall(
+                r"^Contract: ([A-Za-z0-9-]+)$", values[reference].decode("utf-8"), re.MULTILINE
+            ) != ["tessie-morning-brief-consumer-v1"]:
+                _repair()
+            for relative in self.targets:
+                raw, token = _file_snapshot(self.target(relative))
+                if raw != values[relative]:
+                    _repair()
+                binding["native:" + relative] = token
+            if self.target(self.targets[1]) != self.own:
+                _repair()
+            return binding
+        except OSError as error:
+            raise ValueError(
+                "Restore the contained regular read-only Tesla provider and matching native copies."
+            ) from error
+
+    def verify(self):
+        if self.capture() != self.binding:
+            _repair()
+
+
+def native_type() -> Any:
+    binding = _BriefProvider()
+    target = binding.target("skills/tessie-charge/scripts/charge_ipc.py")
     spec = importlib.util.spec_from_file_location("tessie_brief_charge_transport", target)
     if spec is None or spec.loader is None:
-        raise ValueError("Reinstall the complete same-provider native transport.")
+        _repair()
     module = importlib.util.module_from_spec(spec)
+    binding.verify()
     spec.loader.exec_module(module)
-    return module.native_type()
+    binding.verify()
+    native = module.native_type()
+    binding.verify()
+
+    class BoundNative(native):
+        def __init__(self, *args, **kwargs):
+            binding.verify()
+            super().__init__(*args, **kwargs)
+            binding.verify()
+
+        def call(self, payload, timeout):
+            binding.verify()
+            try:
+                return super().call(payload, timeout)
+            finally:
+                binding.verify()
+
+    return BoundNative
 
 
 def exact(value: object, keys: set[str]) -> dict[str, Any]:
@@ -59,8 +282,8 @@ def number(value: object, minimum: float, maximum: float) -> float:
     if (
         isinstance(value, bool)
         or not isinstance(value, (int, float))
-        or not math.isfinite(value)
         or not minimum <= value <= maximum
+        or not math.isfinite(value)
     ):
         raise ValueError("Inspect the native vehicle measurement before the brief.")
     return value

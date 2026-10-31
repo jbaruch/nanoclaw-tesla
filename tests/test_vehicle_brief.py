@@ -267,3 +267,166 @@ def test_decimal_ceiling_of_native_json_shortfall_preserves_original_evidence(am
         f"Synthetic Car: по оценке на сегодняшние поездки не хватает {rendered} кВт·ч."
     ]
     assert {key: result[key] for key in original} == original
+
+
+def _installed_provider(tmp_path, monkeypatch):
+    import sys
+    from pathlib import Path
+
+    owner = load_script("tessie-brief", "brief_ipc")
+    repo = Path(__file__).resolve().parents[1]
+    provider = tmp_path / "provider/nanoclaw-tesla"
+    skills = tmp_path / "native/skills"
+    targets = (
+        "skills/tessie-brief/scripts/tessie-brief.py",
+        "skills/tessie-brief/scripts/brief_ipc.py",
+        "skills/tessie-charge/scripts/charge_ipc.py",
+        "skills/tessie-ops/scripts/tessie_native.py",
+        "skills/tessie-ops/scripts/tessie_core.py",
+    )
+    fake = (
+        "class NativeStub:\n    message_type = 'tessie_request'\n"
+        "    def __init__(self, *args, **kwargs): pass\n"
+        "    def call(self, payload, timeout): return "
+        + repr({"schema_version": 1, "status": 200, "data": summary()})
+        + "\ndef native_type(): return NativeStub\n"
+    )
+    for relative in (
+        ".tessl-plugin/plugin.json",
+        "rules/vehicle-brief-policy.md",
+        "skills/tessie-brief/references/host-contract.md",
+        *targets,
+    ):
+        file = provider / relative
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_bytes((repo / relative).read_bytes())
+        if relative in targets:
+            _, skill, *parts = Path(relative).parts
+            native = skills / ("tessl__" + skill) / Path(*parts)
+            native.parent.mkdir(parents=True, exist_ok=True)
+            if relative.endswith("charge_ipc.py"):
+                file.write_text(fake)
+            native.write_bytes(file.read_bytes())
+    monkeypatch.setattr(owner, "__file__", str(skills / "tessl__tessie-brief/scripts/brief_ipc.py"))
+    monkeypatch.setattr(owner, "PROVIDER", provider, raising=False)
+    monkeypatch.setattr(owner, "INSTALLED", skills / "tessl__tessie-charge/scripts")
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    return owner, provider, skills
+
+
+def test_complete_installed_provider_retains_fixed_summary_without_fallback(tmp_path, monkeypatch):
+    owner, _, _ = _installed_provider(tmp_path, monkeypatch)
+    assert owner.call()["lines"] == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "linked-scripts",
+        "linked-skill",
+        "wrong-provider",
+        "heading-rule",
+        "changed-copy",
+        "hardlinked-target",
+    ],
+)
+def test_installed_transport_refuses_substitutions_before_import(tmp_path, monkeypatch, change):
+    owner, provider, skills = _installed_provider(tmp_path, monkeypatch)
+    charge = skills / "tessl__tessie-charge/scripts/charge_ipc.py"
+    if change in {"linked-scripts", "linked-skill"}:
+        directory = charge.parent if change == "linked-scripts" else charge.parent.parent
+        moved = tmp_path / "outside"
+        directory.rename(moved)
+        directory.symlink_to(moved, target_is_directory=True)
+    if change == "wrong-provider":
+        file = provider / ".tessl-plugin/plugin.json"
+        value = json.loads(file.read_text())
+        value["name"] = "jbaruch/impostor"
+        file.write_text(json.dumps(value))
+    if change == "heading-rule":
+        (provider / "rules/vehicle-brief-policy.md").write_text("# Read-only brief\n")
+    if change == "changed-copy":
+        charge.write_text(charge.read_text() + "\n# replaced native copy\n")
+    if change == "hardlinked-target":
+        (tmp_path / "second.py").hardlink_to(charge)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Invalid source must refuse before import")
+
+    monkeypatch.setattr(owner.importlib.util, "spec_from_file_location", forbidden)
+    with pytest.raises(ValueError):
+        owner.native_type()
+
+
+def test_provider_replacement_between_snapshot_and_import_refuses_before_execution(
+    tmp_path, monkeypatch
+):
+    owner, provider, _ = _installed_provider(tmp_path, monkeypatch)
+    original = owner.importlib.util.module_from_spec
+
+    def replace(spec):
+        module = original(spec)
+        file = provider / ".tessl-plugin/plugin.json"
+        value = json.loads(file.read_text())
+        value["version"] = "0.5.1"
+        file.write_text(json.dumps(value))
+        return module
+
+    monkeypatch.setattr(owner.importlib.util, "module_from_spec", replace)
+    with pytest.raises(ValueError):
+        owner.native_type()
+
+
+def test_provider_change_during_native_type_resolution_refuses_before_bridge(tmp_path, monkeypatch):
+    owner, provider, skills = _installed_provider(tmp_path, monkeypatch)
+    relative = "skills/tessie-charge/scripts/charge_ipc.py"
+    charge = skills / "tessl__tessie-charge/scripts/charge_ipc.py"
+    mutation = (
+        "\nfrom pathlib import Path\noriginal=native_type\ndef native_type():\n    p=Path("
+        + repr(str(provider / ".tessl-plugin/plugin.json"))
+        + ")\n    p.write_text(p.read_text().replace('0.5.0','0.5.1'))\n    return original()\n"
+    )
+    charge.write_text(charge.read_text() + mutation)
+    (provider / relative).write_bytes(charge.read_bytes())
+    with pytest.raises(ValueError):
+        owner.native_type()
+
+
+def test_provider_change_during_one_readback_holds_without_retry(tmp_path, monkeypatch):
+    owner, provider, skills = _installed_provider(tmp_path, monkeypatch)
+    charge = skills / "tessl__tessie-charge/scripts/charge_ipc.py"
+    count = tmp_path / "attempts"
+    mutation = (
+        "\nfrom pathlib import Path\noriginal_call=NativeStub.call\n"
+        "def changed_call(self,payload,timeout):\n"
+        "    counter=Path(" + repr(str(count)) + ")\n"
+        "    with counter.open('a') as output: output.write('1\\n')\n"
+        "    result=original_call(self,payload,timeout)\n"
+        "    p=Path(" + repr(str(provider / ".tessl-plugin/plugin.json")) + ")\n"
+        "    p.write_text(p.read_text().replace('0.5.0','0.5.1'))\n"
+        "    return result\nNativeStub.call=changed_call\n"
+    )
+    charge.write_text(charge.read_text() + mutation)
+    (provider / "skills/tessie-charge/scripts/charge_ipc.py").write_bytes(charge.read_bytes())
+    bridge = owner.native_type()()
+    bridge.message_type = "tessie_brief_request"
+    with pytest.raises(ValueError):
+        bridge.call({"schema_version": 1, "operation": "summary"}, 200)
+    assert count.read_text() == "1\n"
+
+
+@pytest.mark.parametrize("field", ["shortfall_kwh", "expected_departure_percent"])
+def test_oversized_json_integer_is_a_value_refusal_not_float_overflow(field):
+    value = summary()
+    detail = {
+        "shortfall_kwh": 1.1,
+        "expected_departure_percent": 20,
+        "required_percent": 55,
+        "drive_count": 1,
+    }
+    detail[field] = 10**1000
+    value["vehicles"][0]["alerts"] = [{"kind": "insufficient_charge", "detail": detail}]
+    wire = json.dumps(value, allow_nan=False)
+    assert len(wire.encode()) < 128 * 1024
+    with pytest.raises(ValueError):
+        brief_ipc.project(json.loads(wire))
