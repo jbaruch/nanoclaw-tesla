@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.5.0 — 2026-10-31
+
 ### Add cached vehicle observations to morning briefs (#4)
 
 Add the fixed read-only native aggregate adapter and deterministic per-vehicle lines for stored overnight observations, today’s measured drive shortfall, positional tire warnings and documented current vehicle warnings. Keep generic active firmware coverage explicitly unavailable; no wake, control, notice, cadence or charging-state writes occur.
