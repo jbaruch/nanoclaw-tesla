@@ -15,6 +15,7 @@ Read the complete contract before interpreting the result:
 
 It defines the supported evidence and missing coverage. Source publication is not
 native deployment, health proof, enrollment or permission for a vehicle effect.
+Proceed immediately to Step 2.
 
 ## Step 2 — Collect the summary
 
@@ -22,12 +23,13 @@ native deployment, health proof, enrollment or permission for a vehicle effect.
 python3 /home/node/.claude/skills/tessl__tessie-brief/scripts/tessie-brief.py
 ```
 
-No arguments. The script's docstring and `brief_ipc.py` own the exact input,
-output and failure contract. It returns `wake_agent:false` and schema1 `data`
+No arguments. The docstring of `skills/tessie-brief/scripts/tessie-brief.py`
+owns its input, output and exit contract. Exit 0 returns `wake_agent:false` and schema1 `data`
 with deterministic `lines`, observed home day and separate incomplete coverage.
 No poll, control, notice, task, vehicle wake or authority write occurs.
+After valid successful output, proceed immediately to Step 3.
 
-Nonzero or invalid output: report the fixed diagnostic and stop. Never call a
+Exit 1 has fixed stderr and no stdout. Nonzero or invalid output: report the fixed diagnostic and stop. Never call a
 vehicle wake, bypass the cache or run charging poll to complete this summary.
 
 ## Step 3 — Use only proved lines

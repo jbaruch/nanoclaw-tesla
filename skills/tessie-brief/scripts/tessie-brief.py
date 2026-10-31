@@ -4,6 +4,8 @@
 One schema1 summary with deterministic lines for proven conditions and separate
 explicit unknown coverage. Empty lines means no PROVEN alert, not proof of a
 healthy vehicle when coverage is partial. No wake, task, notice or journal write.
+Exit 0 emits exactly one wake_agent:false/data JSON envelope. Exit 1 emits only
+a fixed actionable stderr diagnostic, with no partial stdout.
 """
 
 from __future__ import annotations

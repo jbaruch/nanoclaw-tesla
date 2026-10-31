@@ -61,3 +61,16 @@ Brief aliases are nonempty and bounded at 100 UTF-16 code units (at most
 300 UTF-8 bytes), matching native admission and the saved reader. Oversized or
 unsafe upstream aliases hold the complete summary; never truncate or drop a
 vehicle. Brief-only VIN-free ordinal labels do not change native selectors.
+
+
+## Scoped consumer lookup
+
+`rules/vehicle-brief-policy.md` declares the fixed executable and pure validator
+interfaces. The native skill projection and existing read-only per-provider
+projection must belong to the same `jbaruch/nanoclaw-tesla` manifest, declared
+rule and skill. Verify contained regular metadata, authority/reference and every
+fixed transport target; reject provider substitution, links, changed copies or
+an in-progress projection update before execution/import and after readback.
+An absent old overlay is unavailable; present unsupported or incomplete provider
+material is an error, never healthy evidence. No caller root or fallback target
+selects this source. Native Main and protected-owner checks remain in Core.
