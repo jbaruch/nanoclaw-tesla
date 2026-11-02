@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.5.3 — 2026-11-02
+
 ### Replace the brief's self-attesting loader with a plain import (#21)
 
 `brief_ipc.py` checked inode, mode and owner, hashed the installed sources, checked rule text and ran the verified bytes through custom import hooks, all guarding files on a read-only mount. It now imports the plugin's charge transport normally and keeps the summary request and its validation and rendering: 554 lines down to about 200, and 669 test lines down to about 260. `call()` no longer takes `expected_source_hashes`.
