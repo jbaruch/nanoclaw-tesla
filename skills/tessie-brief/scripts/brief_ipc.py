@@ -1,34 +1,22 @@
 """Fixed genuine-main vehicle brief request and exact response validator.
 
-No caller role, route, date, vehicle, policy or effect fields. Co-shipped charge
-transport loads the same native broker client; no direct HTTP or fallback.
+No caller role, route, date, vehicle, policy or effect fields. The same plugin's
+charge transport supplies the host IPC client; no direct HTTP or fallback.
 All numbers and rendered lines are read-only evidence, never control authority.
 """
 
 from __future__ import annotations
 
-import builtins
-import hashlib
-import importlib.abc
-import importlib.machinery
-import importlib.util
-import json
 import math
-import os
-import re
-import stat
 import sys
 import unicodedata
-from contextlib import ExitStack
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
-from types import MappingProxyType, SimpleNamespace
-from typing import Any, NoReturn
+from typing import Any
 from zoneinfo import ZoneInfo
 
 INSTALLED = Path("/home/node/.claude/skills/tessl__tessie-charge/scripts")
-PROVIDER = Path("/home/node/.claude/.tessl/tiles/jbaruch/nanoclaw-tesla")
 CHECKS = ("overnight_unplugged", "insufficient_charge", "tire_warning", "open_vehicle_alert")
 TIRES = {
     "front_left": "переднее левое",
@@ -38,357 +26,15 @@ TIRES = {
 }
 
 
-RULE_DECLARATIONS = (
-    (
-        "- The provider is ",
-        "- The provider is `jbaruch/nanoclaw-tesla`.",
-    ),
-    (
-        "- The authored scope is ",
-        "- The authored scope is `skills/tessie-brief/` and the optional "
-        "`jbaruch/nanoclaw-admin` morning-brief source that consumes it.",
-    ),
-    (
-        "- Co-shipped executable target: ",
-        "- Co-shipped executable target: `skills/tessie-brief/scripts/tessie-brief.py`.",
-    ),
-    (
-        "- Co-shipped pure validator target: ",
-        "- Co-shipped pure validator target: "
-        "`skills/tessie-brief/scripts/brief_ipc.py`, function `project(value)`.",
-    ),
-    (
-        "- Co-shipped capture-bound call target: ",
-        "- Co-shipped capture-bound call target: "
-        "`skills/tessie-brief/scripts/brief_ipc.py`, function "
-        "`call(expected_source_hashes=None)`.",
-    ),
-    (
-        "- The executable takes ",
-        "- The executable takes no arguments and returns exactly "
-        "`{wake_agent:false,data}` on exit 0; exit 1 has fixed stderr and no stdout.",
-    ),
-    (
-        "- `project(value)` accepts ",
-        "- `project(value)` accepts the Host schema1 data object without `lines`, "
-        "validates its complete fields and returns that object plus canonical literal"
-        " lines; invalid supported input raises `ValueError` or an unknown-zone "
-        "error, with no provider I/O.",
-    ),
-    (
-        "- The fixed native transport closure is ",
-        "- The fixed native transport closure is the same provider's "
-        "`skills/tessie-charge/scripts/charge_ipc.py` and "
-        "`skills/tessie-ops/scripts/tessie_native.py` plus "
-        "`skills/tessie-ops/scripts/tessie_core.py`.",
-    ),
-    (
-        "- Read the complete ",
-        "- Read the complete `skills/tessie-brief/references/host-contract.md` in "
-        "this installed provider before producing or using summary output.",
-    ),
-)
+def native_type() -> Any:
+    """The existing host IPC client, from the installed skill or a source checkout."""
+    source = Path(__file__).resolve().parents[2] / "tessie-charge" / "scripts"
+    scripts = INSTALLED if INSTALLED.exists() else source
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import charge_ipc
 
-
-def _declares_rule(raw):
-    lines = [line.strip() for line in raw.decode("utf-8").splitlines()]
-    return all(
-        [line for line in lines if line.startswith(prefix)] == [expected]
-        for prefix, expected in RULE_DECLARATIONS
-    )
-
-
-def _repair() -> NoReturn:
-    raise ValueError(
-        "Reinstall the complete same-provider read-only vehicle brief; preserve other sources."
-    )
-
-
-def _identity(meta):
-    return (meta.st_dev, meta.st_ino, meta.st_mode, meta.st_uid, meta.st_gid)
-
-
-def _file_snapshot(file: Path):
-    """Fixed public source read through held, no-follow component descriptors."""
-    if not file.is_absolute() or ".." in file.parts:
-        _repair()
-    with ExitStack() as opened:
-        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-        fd = os.open("/", flags)
-        opened.callback(os.close, fd)
-        parents: list[tuple[int, int | None, str, os.stat_result]] = [(fd, None, "/", os.fstat(fd))]
-        for name in file.parts[1:-1]:
-            parent = fd
-            fd = os.open(name, flags, dir_fd=parent)
-            opened.callback(os.close, fd)
-            parents.append((fd, parent, name, os.fstat(fd)))
-        parent = fd
-        fd = os.open(file.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
-        opened.callback(os.close, fd)
-        before = os.fstat(fd)
-        if (
-            not stat.S_ISREG(before.st_mode)
-            or before.st_nlink != 1
-            or not 0 < before.st_size <= 128 * 1024
-        ):
-            _repair()
-        raw = os.read(fd, before.st_size + 1)
-
-        def stamp(meta):
-            return (
-                _identity(meta),
-                meta.st_nlink,
-                meta.st_size,
-                meta.st_mtime_ns,
-                meta.st_ctime_ns,
-            )
-
-        if (
-            len(raw) != before.st_size
-            or stamp(before) != stamp(os.fstat(fd))
-            or stamp(before) != stamp(os.stat(file.name, dir_fd=parent, follow_symlinks=False))
-        ):
-            _repair()
-        for held, parent, name, meta in parents:
-            named = (
-                os.stat(name, dir_fd=parent, follow_symlinks=False)
-                if parent is not None
-                else os.lstat("/")
-            )
-            if _identity(meta) != _identity(os.fstat(held)) or _identity(meta) != _identity(named):
-                _repair()
-        return raw, (
-            stamp(before),
-            tuple(_identity(meta) for _, _, _, meta in parents),
-            hashlib.sha256(raw).hexdigest(),
-        )
-
-
-def _unique(pairs):
-    value = {}
-    for key, item in pairs:
-        if key in value:
-            _repair()
-        value[key] = item
-    return value
-
-
-_SOURCE_TARGETS = (
-    "skills/tessie-brief/scripts/tessie-brief.py",
-    "skills/tessie-brief/scripts/brief_ipc.py",
-    "skills/tessie-charge/scripts/charge_ipc.py",
-    "skills/tessie-ops/scripts/tessie_native.py",
-    "skills/tessie-ops/scripts/tessie_core.py",
-)
-_CAPTURE_PATHS = (
-    ".tessl-plugin/plugin.json",
-    "rules/vehicle-brief-policy.md",
-    "skills/tessie-brief/references/host-contract.md",
-    "skills/tessie-brief/SKILL.md",
-    *_SOURCE_TARGETS,
-)
-
-
-def _expected_capture(value: dict[str, str] | None):
-    if value is None:
-        return None
-    if type(value) is not dict:
-        _repair()
-    owned = value.copy()
-    if (
-        any(type(path) is not str for path in owned)
-        or set(owned) != set(_CAPTURE_PATHS)
-        or any(
-            type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None
-            for digest in owned.values()
-        )
-    ):
-        _repair()
-    # Callers cannot weaken a live binding by mutating their original inventory.
-    return MappingProxyType(owned)
-
-
-class _BriefProvider:
-    """One fixed provider snapshot, never a caller-selected transport or grant."""
-
-    targets = _SOURCE_TARGETS
-
-    def __init__(self, expected_source_hashes: dict[str, str] | None = None):
-        self.expected = _expected_capture(expected_source_hashes)
-        own = Path(__file__).absolute()
-        skill = own.parents[1]
-        self.source = (
-            skill.name == "tessie-brief"
-            and skill.parent.name == "skills"
-            and not (INSTALLED.parent.exists() or INSTALLED.parent.is_symlink())
-        )
-        if not self.source and skill.name != "tessl__tessie-brief":
-            _repair()
-        self.root = own.parents[3] if self.source else PROVIDER
-        self.native = skill.parent
-        self.own = own
-        self.binding, self.sources = self.capture()
-
-    def target(self, relative):
-        if self.source:
-            return self.root / relative
-        _, skill, *parts = Path(relative).parts
-        return self.native / ("tessl__" + skill) / Path(*parts)
-
-    def capture(self):
-        rule = "rules/vehicle-brief-policy.md"
-        reference = "skills/tessie-brief/references/host-contract.md"
-        paths = _CAPTURE_PATHS
-        values, binding = {}, {}
-        try:
-            for relative in paths:
-                values[relative], binding[relative] = _file_snapshot(self.root / relative)
-            manifest = json.loads(values[paths[0]], object_pairs_hook=_unique)
-            if (
-                not isinstance(manifest, dict)
-                or manifest.get("name") != "jbaruch/nanoclaw-tesla"
-                or not isinstance(manifest.get("version"), str)
-                or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", manifest["version"])
-            ):
-                _repair()
-            for field, required in [
-                ("skills", {"skills/tessie-brief", "skills/tessie-charge", "skills/tessie-ops"}),
-                ("rules", {rule, "rules/nanoclaw-skill-root.md"}),
-            ]:
-                entries = manifest.get(field)
-                if (
-                    not isinstance(entries, list)
-                    or not all(isinstance(item, str) for item in entries)
-                    or not required.issubset(entries)
-                ):
-                    _repair()
-            if not _declares_rule(values[rule]) or re.findall(
-                r"^Contract: ([A-Za-z0-9-]+)$", values[reference].decode("utf-8"), re.MULTILINE
-            ) != ["tessie-morning-brief-consumer-v1"]:
-                _repair()
-            for relative in self.targets:
-                raw, token = _file_snapshot(self.target(relative))
-                if raw != values[relative]:
-                    _repair()
-                binding["native:" + relative] = token
-            if self.target(self.targets[1]) != self.own:
-                _repair()
-            if self.expected is not None and any(
-                hashlib.sha256(values[relative]).hexdigest() != self.expected[relative]
-                for relative in paths
-            ):
-                _repair()
-            return binding, {relative: values[relative] for relative in self.targets}
-        except OSError as error:
-            raise ValueError(
-                "Restore the contained regular read-only Tesla provider and matching native copies."
-            ) from error
-
-    def verify(self):
-        current, _ = self.capture()
-        if current != self.binding:
-            _repair()
-
-
-def native_type(*, expected_source_hashes: dict[str, str] | None = None) -> Any:
-    binding = _BriefProvider(expected_source_hashes)
-    core_path = "skills/tessie-ops/scripts/tessie_core.py"
-    native_path = "skills/tessie-ops/scripts/tessie_native.py"
-    charge_path = "skills/tessie-charge/scripts/charge_ipc.py"
-
-    def source_module(name, relative, importer):
-        # Fixed, captured provider source only: never SourceFileLoader or PYC.
-        if (name, relative) not in {
-            ("_tessie_brief_verified_core", core_path),
-            ("tessie_brief_charge_transport", charge_path),
-        } or name in sys.modules:
-            _repair()
-        spec = importlib.machinery.ModuleSpec(name, loader=None)
-        module = importlib.util.module_from_spec(spec)
-        module.__file__ = str(binding.target(relative))
-        vars(module)["__builtins__"] = {**vars(builtins), "__import__": importer}
-        binding.verify()
-        exec(
-            compile(binding.sources[relative], module.__file__, "exec", dont_inherit=True),
-            vars(module),
-        )
-        binding.verify()
-        return module
-
-    def standard_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if level or name.startswith("tessie_"):
-            _repair()
-        return builtins.__import__(name, globals, locals, fromlist, level)
-
-    core = source_module("_tessie_brief_verified_core", core_path, standard_import)
-
-    def native_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "tessie_core" and level == 0:
-            return core
-        return standard_import(name, globals, locals, fromlist, level)
-
-    class NativeLoader(importlib.abc.Loader):
-        def create_module(self, spec):
-            return None
-
-        def exec_module(self, module):
-            module.__file__ = str(binding.target(native_path))
-            vars(module)["__builtins__"] = {**vars(builtins), "__import__": native_import}
-            binding.verify()
-            exec(
-                compile(binding.sources[native_path], module.__file__, "exec", dont_inherit=True),
-                vars(module),
-            )
-            binding.verify()
-
-    native_spec = importlib.machinery.ModuleSpec("tessie_charge_native", NativeLoader())
-
-    def native_spec_for(name, path):
-        if name != native_spec.name or Path(path) != binding.target(native_path):
-            _repair()
-        binding.verify()
-        return native_spec
-
-    def native_from_spec(spec):
-        if spec is not native_spec:
-            _repair()
-        return importlib.util.module_from_spec(spec)
-
-    # These views belong only to the private charge module. No global module,
-    # importlib function or sys.path entry is replaced or trusted as provider code.
-    local_importlib = SimpleNamespace(
-        util=SimpleNamespace(
-            spec_from_file_location=native_spec_for,
-            module_from_spec=native_from_spec,
-        )
-    )
-    local_sys = SimpleNamespace(path=[], modules={"tessie_core": core})
-
-    def charge_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if level == 0 and name == "importlib.util":
-            return local_importlib
-        if level == 0 and name == "sys":
-            return local_sys
-        return standard_import(name, globals, locals, fromlist, level)
-
-    module = source_module("tessie_brief_charge_transport", charge_path, charge_import)
-    native = module.native_type()
-    binding.verify()
-
-    class BoundNative(native):
-        def __init__(self, *args, **kwargs):
-            binding.verify()
-            super().__init__(*args, **kwargs)
-            binding.verify()
-
-        def call(self, payload, timeout):
-            binding.verify()
-            try:
-                return super().call(payload, timeout)
-            finally:
-                binding.verify()
-
-    return BoundNative
+    return charge_ipc.native_type()
 
 
 def exact(value: object, keys: set[str]) -> dict[str, Any]:
@@ -541,12 +187,8 @@ def project(value: object) -> dict[str, Any]:
     return {**result, "lines": lines}
 
 
-def call(*, expected_source_hashes: dict[str, str] | None = None) -> dict[str, Any]:
-    bridge = (
-        native_type()
-        if expected_source_hashes is None
-        else native_type(expected_source_hashes=expected_source_hashes)
-    )()
+def call() -> dict[str, Any]:
+    bridge = native_type()()
     bridge.message_type = "tessie_brief_request"
     reply = bridge.call({"schema_version": 1, "operation": "summary"}, 200)
     if reply.get("status") != 200:
