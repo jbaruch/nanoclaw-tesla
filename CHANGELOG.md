@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.6 — 2026-11-15
+
+- chore: refresh the Tessl-generated ignore block (#24)
+
 ## 0.5.3 — 2026-11-02
 
 ### Replace the brief's self-attesting loader with a plain import (#21)
