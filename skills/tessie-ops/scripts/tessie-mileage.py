@@ -4,6 +4,13 @@
 Usage: tessie-mileage.py INPUT_JSON --include-location
 INPUT_JSON contains month (YYYY-MM), timezone (IANA), airport_locations (exact
 Tessie location label -> IATA code), bookings, and tripit (TripIt JSON response).
+work_events optionally contains Google Calendar event objects from the
+verified work calendar: id, summary, start/end {dateTime with UTC offset or date}, and
+location (exact Tessie label, or absent when unresolved). Retain calendar IDs
+and original event evidence in the task. Cancelled or owner-declined events are
+omitted. Event legs use the same six-hour windows and ambiguity batch as flights;
+the event summary supplies purpose. All-day dates use the report timezone and
+exclusive end date; their drives always need confirmation in the monthly batch.
 After the monthly batch, optional confirmed is [{vin_suffix, drive_id, purpose}]
 copied ONLY from explicit owner business decisions in this task. These decisions
 may include ambiguous rows in the CSV; the file grants no tag-write authority.
@@ -12,7 +19,7 @@ baruchs@port.io, or the Navan browser behind the Port login. Each has source
 (port-mail-ingress or navan-browser), account (baruchs@port.io), purpose, and
 flights [{date: YYYY-MM-DD, from: IATA, to: IATA, airline: IATA, number: string}].
 This is an extraction contract, NOT a Navan API schema; retain original mail or
-browser evidence in the task. Other mail, calendars and destination guesses
+browser evidence in the task. Personal mail/calendars and destination guesses
 are not work evidence. Recognition requiring judgment belongs to the caller.
 
 tripit uses live AirObject (singleton or list), trip_id, Segment (singleton or
@@ -31,7 +38,8 @@ No natural-language location matching.
 
 Reads all eligible vehicles via the existing host broker. Tessie defaults to
 miles; odometer_distance is used without conversion. Local drive start dates
-select the month. Duplicate identical drive IDs are counted once; conflicting
+select the exported month, after checking competitors in six hours of adjacent
+month context. Duplicate identical drive IDs are counted once; conflicting
 duplicates or malformed provider rows fail the whole report, never partial CSV.
 Stdout JSON: {month, csv, summary, business, ambiguous}. business/ambiguous rows
 carry vehicle (alias, vin_suffix), drive_id, date, from, to, miles, purpose;
@@ -90,6 +98,8 @@ def flight_time(value: dict[str, str]) -> datetime:
 
 
 def work_trips(data: dict[str, Any]) -> list[dict[str, Any]]:
+    if "Error" in data["tripit"]:
+        raise ValueError("TripIt source returned an error; refresh the source")
     booked: dict[tuple[str, ...], set[str]] = {}
     for booking in objects(data["bookings"]):
         if booking["source"] not in {"port-mail-ingress", "navan-browser"} or (
@@ -150,7 +160,39 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
         for label, code in airports.items()
     ):
         raise ValueError("invalid airport locations")
-    trips = work_trips(data)
+    contexts = work_trips(data)
+    for event in objects(data.get("work_events", [])):
+        if event.get("status") == "cancelled" or any(
+            attendee.get("self") and attendee.get("responseStatus") == "declined"
+            for attendee in objects(event.get("attendees", []))
+        ):
+            continue
+        if not all(isinstance(event[key], str) and event[key].strip() for key in ("id", "summary")):
+            raise ValueError("missing work event identity or purpose")
+        all_day = "date" in event["start"]
+        if all_day:
+            departure = datetime.strptime(event["start"]["date"], "%Y-%m-%d").replace(tzinfo=zone)
+            arrival = datetime.strptime(event["end"]["date"], "%Y-%m-%d").replace(tzinfo=zone)
+        else:
+            departure = datetime.fromisoformat(event["start"]["dateTime"])
+            arrival = datetime.fromisoformat(event["end"]["dateTime"])
+        location = event.get("location", "")
+        if (
+            departure.utcoffset() is None
+            or arrival.utcoffset() is None
+            or arrival <= departure
+            or not isinstance(location, str)
+        ):
+            raise ValueError("invalid work event time or location")
+        contexts.append(
+            {
+                "purpose": event["summary"],
+                "departure": departure,
+                "arrival": arrival,
+                "location": location,
+                "closed": all_day,
+            }
+        )
     inventory = fetch_inventory(rt.client)
     candidates = []
     seen = {}
@@ -161,7 +203,10 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
             vehicle,
             "drives",
             include_location=True,
-            query={"from": int(start.timestamp()), "to": int(end.timestamp())},
+            query={
+                "from": int((start - timedelta(hours=6)).timestamp()),
+                "to": int((end + timedelta(hours=6)).timestamp()),
+            },
         )["data"]
         for drive in objects(payload["results"]):
             drive_id = drive["id"]
@@ -184,21 +229,32 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
                 raise ValueError("invalid drive measurements")
             begin = datetime.fromtimestamp(begin, zone)
             finish = datetime.fromtimestamp(finish, zone)
-            if not start <= begin < end:
-                continue
             origin, destination = drive["starting_location"], drive["ending_location"]
             if not all(isinstance(v, str) for v in (origin, destination)):
                 raise ValueError("invalid drive locations")
             matches, possible = [], []
-            for index, trip in enumerate(trips):
-                outbound = timedelta(0) <= trip["departure"] - finish <= timedelta(hours=6)
-                inbound = timedelta(0) <= begin - trip["arrival"] <= timedelta(hours=6)
-                within = trip["closed"] and trip["departure"] <= begin < finish <= trip["arrival"]
+            for index, context in enumerate(contexts):
+                outbound = timedelta(0) <= context["departure"] - finish <= timedelta(hours=6)
+                inbound = timedelta(0) <= begin - context["arrival"] <= timedelta(hours=6)
+                within = (
+                    context["closed"]
+                    and context["departure"] <= begin < finish <= context["arrival"]
+                )
                 if outbound or inbound or within:
-                    possible.append(trip["purpose"])
-                if outbound and airports.get(destination) == trip["origin"]:
+                    possible.append(context["purpose"])
+                destination_matches = (
+                    bool(context["location"]) and destination == context["location"]
+                    if "location" in context
+                    else airports.get(destination) == context["origin"]
+                )
+                origin_matches = (
+                    bool(context["location"]) and origin == context["location"]
+                    if "location" in context
+                    else airports.get(origin) == context["destination"]
+                )
+                if outbound and destination_matches:
                     matches.append((index, "departure"))
-                elif inbound and airports.get(origin) == trip["destination"]:
+                elif inbound and origin_matches:
                     matches.append((index, "return"))
                 elif within:
                     matches.append((index, "within"))
@@ -215,9 +271,11 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
             }
             reason = None
             if len(matches) != 1:
-                reason = "uncertain trip or airport match"
-            elif matches[0][1] == "within":
-                reason = "within-trip drive needs trip-location confirmation"
+                reason = "uncertain trip, event or location match"
+            elif matches[0][1] == "within" or (
+                "location" in contexts[matches[0][0]] and contexts[matches[0][0]]["closed"]
+            ):
+                reason = "drive during trip or all-day event needs location confirmation"
             elif drive.get("tag") and drive["tag"] != "Business":
                 reason = "existing tag requires confirmation"
             candidates.append((row, matches, reason))
@@ -233,9 +291,11 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
         decisions[key] = decision["purpose"]
     business, ambiguous = [], []
     for row, matches, reason in candidates:
+        if data["month"] != row["date"][:7]:
+            continue
         if len(matches) == 1 and matches[0][1] != "within":
             if sum(matches[0] in other for _, other, _ in candidates) > 1:
-                reason = "multiple drives for the same airport leg"
+                reason = "multiple drives for the same work leg"
         decision = decisions.pop((row["vehicle"]["vin_suffix"], row["drive_id"]), None)
         if decision is not None:
             row["purpose"] = decision
@@ -243,7 +303,7 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
         elif reason:
             ambiguous.append({**row, "reason": reason})
         else:
-            row["purpose"] = trips[matches[0][0]]["purpose"]
+            row["purpose"] = contexts[matches[0][0]]["purpose"]
             business.append(row)
     if decisions:
         raise ValueError("confirmation does not identify a report candidate")
@@ -293,7 +353,7 @@ def main(argv: Sequence[str] | None = None, *, runtime: Runtime | None = None) -
         except (OSError, ValueError, KeyError, TypeError, OverflowError) as exc:
             raise TessieError(
                 "Cannot build mileage report. Check INPUT_JSON against the script contract "
-                "and refresh complete TripIt/Tessie source data; no tags were changed.",
+                "and refresh complete TripIt/Tessie/calendar source data; no tags were changed.",
                 code="invalid_mileage_data",
             ) from exc
         emit(result, rt.out)

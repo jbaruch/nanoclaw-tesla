@@ -136,11 +136,23 @@ def round_trip():
 
 
 def execute(tmp_path, data, drives, *, second=None, chat=None, include_location=True):
-    routes = {("GET", "/vehicles"): json_response(inventory_payload())}
+    transport = FakeTransport({("GET", "/vehicles"): json_response(inventory_payload())})
     for vin, rows in ((RUSTLER, drives), (BRADBURY, second or [])):
-        routes[("GET", f"/{vin}/status")] = json_response({"status": "asleep"})
-        routes[("GET", f"/{vin}/drives")] = json_response({"results": rows})
-    transport = FakeTransport(routes)
+        transport.routes[("GET", f"/{vin}/status")] = json_response({"status": "asleep"})
+
+        def queried_drives(rows=rows):
+            query = transport.calls[-1]["query"]
+            return json_response(
+                {
+                    "results": [
+                        row
+                        for row in rows
+                        if int(query["from"]) <= row["started_at"] < int(query["to"])
+                    ]
+                }
+            )
+
+        transport.routes[("GET", f"/{vin}/drives")] = queried_drives
     kwargs = {"chat": chat} if chat else {}
     rt, out, err = make_runtime(tmp_path, transport, **kwargs)
     path = tmp_path / "input.json"
@@ -182,8 +194,8 @@ def test_both_airport_legs_csv_and_cached_reads(tmp_path):
     assert all(call["method"] == "GET" for call in transport.calls)
     query = next(c["query"] for c in transport.calls if c["path"].endswith("/drives"))
     assert query == {
-        "from": str(epoch("2025-11-01T00:00:00-05:00")),
-        "to": str(epoch("2025-12-01T00:00:00-06:00")),
+        "from": str(epoch("2025-10-31T18:00:00-05:00")),
+        "to": str(epoch("2025-12-01T06:00:00-06:00")),
     }
 
 
@@ -222,6 +234,192 @@ def test_competing_airport_drives_across_vehicles_are_ambiguous(tmp_path):
     code, result, _, _ = execute(tmp_path, sources(), rows, second=[dict(rows[0], id=20001)])
     assert code == 0 and result is not None
     assert [r["drive_id"] for r in result["business"]] == [10002]
+    assert len(result["ambiguous"]) == 2
+    assert all("multiple drives" in r["reason"] for r in result["ambiguous"])
+
+
+@pytest.mark.parametrize("month,expected", [("2025-10", 10001), ("2025-11", 10002)])
+@pytest.mark.parametrize("leg", ["departure", "return"])
+def test_competing_airport_drives_across_months_need_confirmation(tmp_path, month, expected, leg):
+    data = sources()
+    data["month"] = month
+    segments = data["tripit"]["AirObject"][0]["Segment"]
+    if leg == "departure":
+        segments[0]["StartDateTime"]["time"] = "02:00:00"
+        times = [
+            ("2025-10-31T22:00:00-05:00", "2025-10-31T22:30:00-05:00"),
+            ("2025-11-01T00:00:00-05:00", "2025-11-01T00:30:00-05:00"),
+        ]
+        origin, destination = "Home", "Nashville International Airport"
+    else:
+        data["bookings"][0]["flights"][0]["date"] = "2025-10-29"
+        for field in ("StartDateTime", "EndDateTime"):
+            segments[0][field]["date"] = "2025-10-29"
+            segments[1][field]["date"] = "2025-10-31"
+        segments[1]["EndDateTime"]["time"] = "23:00:00"
+        segments[1]["EndDateTime"]["utc_offset"] = "-05:00"
+        times = [
+            ("2025-10-31T23:15:00-05:00", "2025-10-31T23:45:00-05:00"),
+            ("2025-11-01T00:30:00-05:00", "2025-11-01T01:00:00-05:00"),
+        ]
+        origin, destination = "Nashville International Airport", "Home"
+    rows = [
+        drive(10001 + i, begin, end, origin, destination) for i, (begin, end) in enumerate(times)
+    ]
+    code, result, err, transport = execute(tmp_path, data, rows[:1], second=rows[1:])
+    assert code == 0 and not err and result is not None
+    assert result["business"] == []
+    assert [r["drive_id"] for r in result["ambiguous"]] == [expected]
+    assert "multiple drives" in result["ambiguous"][0]["reason"]
+    assert len(list(csv.reader(io.StringIO(result["csv"])))) == 1
+    for call in transport.calls:
+        if call["path"].endswith("/drives"):
+            assert int(call["query"]["from"]) <= rows[0]["started_at"]
+            assert int(call["query"]["to"]) > rows[1]["started_at"]
+
+
+@pytest.mark.parametrize("with_air", [False, True])
+def test_tripit_error_fails_without_partial_csv_or_vehicle_reads(tmp_path, with_air):
+    data = sources()
+    if not with_air:
+        data["tripit"] = {}
+    data["tripit"]["Error"] = {"code": "500", "description": "Unavailable"}
+    code, result, err, transport = execute(tmp_path, data, round_trip())
+    assert code == 1 and result is None
+    assert "refresh complete TripIt/Tessie/calendar source data" in err
+    assert transport.calls == []
+
+
+def event_sources():
+    data = sources()
+    data["bookings"] = []
+    data["tripit"] = {"AirObject": []}
+    data["work_events"] = [
+        {
+            "id": "work-event-1",
+            "summary": 'Work, "Meetup"',
+            "location": "Conference Hall",
+            "start": {"dateTime": "2025-11-10T10:00:00-06:00"},
+            "end": {"dateTime": "2025-11-10T17:00:00-06:00"},
+        }
+    ]
+    return data
+
+
+def event_drives():
+    return [
+        drive(
+            10011,
+            "2025-11-10T09:00:00-06:00",
+            "2025-11-10T09:30:00-06:00",
+            "Home",
+            "Conference Hall",
+        ),
+        drive(
+            10012,
+            "2025-11-10T17:30:00-06:00",
+            "2025-11-10T18:00:00-06:00",
+            "Conference Hall",
+            "Home",
+            10.25,
+        ),
+    ]
+
+
+def test_work_calendar_event_legs_export_with_event_name(tmp_path):
+    code, result, err, transport = execute(tmp_path, event_sources(), event_drives())
+    assert code == 0 and not err and result is not None
+    assert [r["drive_id"] for r in result["business"]] == [10011, 10012]
+    assert result["ambiguous"] == []
+    csv_rows = list(csv.reader(io.StringIO(result["csv"])))
+    assert [row[4] for row in csv_rows[1:]] == ['Work, "Meetup"'] * 2
+    assert "2 work drives, 22.60 miles" in result["summary"]
+    assert all(c["method"] == "GET" for c in transport.calls)
+
+
+def test_uncertain_event_drives_use_existing_batch_confirmation(tmp_path):
+    data, rows = event_sources(), event_drives()
+    rows[0]["ending_location"] = "Unresolved event address"
+    rows[1]["tag"] = "Personal"
+    code, result, _, _ = execute(tmp_path, data, rows)
+    assert code == 0 and result is not None and result["business"] == []
+    assert [r["drive_id"] for r in result["ambiguous"]] == [10011, 10012]
+    data["confirmed"] = [
+        {"vin_suffix": RUSTLER[-4:], "drive_id": row["id"], "purpose": 'Work, "Meetup"'}
+        for row in rows
+    ]
+    code, result, err, transport = execute(tmp_path, data, rows)
+    assert code == 0 and not err and result is not None and result["ambiguous"] == []
+    assert [r["drive_id"] for r in result["business"]] == [10011, 10012]
+    assert list(csv.reader(io.StringIO(result["csv"])))[1][4] == 'Work, "Meetup"'
+    assert all(c["method"] == "GET" for c in transport.calls)
+
+
+@pytest.mark.parametrize("change", ["cancelled", "declined", "no_event", "outside_time"])
+def test_event_destination_alone_is_not_work(tmp_path, change):
+    data, rows = event_sources(), event_drives()
+    event = data["work_events"][0]
+    if change == "cancelled":
+        data["work_events"] = [{"id": event["id"], "status": "cancelled"}]
+    elif change == "declined":
+        event["attendees"] = [{"self": True, "responseStatus": "declined"}]
+    elif change == "no_event":
+        data["work_events"] = []
+    else:
+        for field in ("start", "end"):
+            event[field]["dateTime"] = event[field]["dateTime"].replace("11-10", "11-11")
+    code, result, err, _ = execute(tmp_path, data, rows)
+    assert code == 0 and not err and result is not None
+    assert result["business"] == result["ambiguous"] == []
+
+
+@pytest.mark.parametrize("change", ["timezone", "backwards", "purpose", "location"])
+def test_invalid_work_event_fails_without_partial_report(tmp_path, change):
+    data = event_sources()
+    event = data["work_events"][0]
+    if change == "timezone":
+        event["start"]["dateTime"] = "2025-11-10T10:00:00"
+    elif change == "backwards":
+        event["end"] = event["start"]
+    elif change == "purpose":
+        event["summary"] = " "
+    else:
+        event["location"] = None
+    code, result, err, transport = execute(tmp_path, data, event_drives())
+    assert code == 1 and result is None and "Check INPUT_JSON" in err
+    assert transport.calls == []
+
+
+def test_all_day_event_drives_need_batch_confirmation(tmp_path):
+    data = event_sources()
+    event = data["work_events"][0]
+    event["start"] = {"date": "2025-11-10"}
+    event["end"] = {"date": "2025-11-11"}
+    code, result, err, _ = execute(tmp_path, data, event_drives())
+    assert code == 0 and not err and result is not None and result["business"] == []
+    assert [r["drive_id"] for r in result["ambiguous"]] == [10011, 10012]
+    data["confirmed"] = [
+        {"vin_suffix": RUSTLER[-4:], "drive_id": 10011, "purpose": event["summary"]}
+    ]
+    code, result, err, _ = execute(tmp_path, data, event_drives())
+    assert code == 0 and not err and result is not None
+    assert [r["drive_id"] for r in result["business"]] == [10011]
+    assert [r["drive_id"] for r in result["ambiguous"]] == [10012]
+
+
+def test_missing_event_location_is_retained_in_batch(tmp_path):
+    data = event_sources()
+    del data["work_events"][0]["location"]
+    code, result, err, _ = execute(tmp_path, data, event_drives())
+    assert code == 0 and not err and result is not None and result["business"] == []
+    assert [r["drive_id"] for r in result["ambiguous"]] == [10011, 10012]
+
+
+def test_competing_event_drives_across_vehicles_require_confirmation(tmp_path):
+    rows = event_drives()
+    code, result, _, _ = execute(tmp_path, event_sources(), rows, second=[dict(rows[0], id=20011)])
+    assert code == 0 and result is not None
+    assert [r["drive_id"] for r in result["business"]] == [10012]
     assert len(result["ambiguous"]) == 2
     assert all("multiple drives" in r["reason"] for r in result["ambiguous"])
 
@@ -326,15 +524,19 @@ def test_encoded_adapter_accepts_mileage_report():
 
 
 @pytest.mark.parametrize("provider_status,accepted", [(200, True), (200, False), (403, False)])
+@pytest.mark.parametrize("context", ["trip", "event"])
 def test_report_ids_feed_existing_tag_flow_and_csv_survives_tag_failure(
-    tmp_path, provider_status, accepted
+    tmp_path, provider_status, accepted, context
 ):
-    rows = round_trip()
+    data, rows = (
+        (sources(), round_trip()) if context == "trip" else (event_sources(), event_drives())
+    )
+    expected_id = 10002 if context == "trip" else 10012
     rows[0]["tag"] = "Personal"
-    code, result, _, transport = execute(tmp_path, sources(), rows)
+    code, result, _, transport = execute(tmp_path, data, rows)
     assert code == 0 and result is not None
     original_csv = result["csv"]
-    assert [r["drive_id"] for r in result["business"]] == [10002]
+    assert [r["drive_id"] for r in result["business"]] == [expected_id]
     transport.routes[("POST", f"/{RUSTLER}/drives/set_tag")] = json_response(
         {"result": accepted}, provider_status
     )
@@ -358,7 +560,7 @@ def test_report_ids_feed_existing_tag_flow_and_csv_survives_tag_failure(
     )
     writes = [c for c in transport.calls if c["method"] == "POST"]
     assert len(writes) == 1
-    assert json.loads(writes[0]["body"]) == {"drives": "10002", "tag": "Business"}
+    assert json.loads(writes[0]["body"]) == {"drives": str(expected_id), "tag": "Business"}
     assert result["csv"] == original_csv
     if provider_status == 200:
         assert json.loads(out.getvalue())["status"] == ("accepted" if accepted else "failed")
