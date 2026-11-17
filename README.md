@@ -70,5 +70,13 @@ The development `jbaruch/coding-policy` dependency pins 0.5.10. This new provide
 is outside the host contract’s enumerated floating-manifest set. No committed
 scanner tracks the Tessl registry; the maintainer checks it monthly with
 `tessl update jbaruch/coding-policy --yes` and lands any reviewed manifest update
-as a separate change. Dependabot renews external action digests; Renovate tracks
-the exact CI Python patch weekly within 3.11.
+as a separate change. [Renovate](renovate.json) is this repository's only
+dependency scanner, running in full mode before 6am on Monday. Its native
+[pip requirements](https://docs.renovatebot.com/modules/manager/pip_requirements/)
+and [GitHub Actions](https://docs.renovatebot.com/modules/manager/github-actions/)
+managers renew Python dependencies, external action and reusable workflow digests,
+and the exact CI Python patch within 3.11; the enabled pre-commit manager renews hook pins.
+Minor, patch and digest updates share one PR; major updates require Dependency
+Dashboard approval. Renovate uses `chore(deps)` commits and opens at most five PRs
+at once. After a Python dependency bump, regenerate `requirements-dev.lock` with
+the command above and run the checks in [.github/workflows/test.yml](.github/workflows/test.yml).

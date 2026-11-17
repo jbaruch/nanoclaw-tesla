@@ -8,7 +8,7 @@ name: Review & Publish Plugin
 # Requires the repo secret TESSL_TOKEN
 # (https://github.com/jbaruch/nanoclaw-tesla/settings/secrets/actions).
 # Renewal: the `uses:` SHA is the jbaruch/coding-policy commit this caller was
-# written against; Dependabot's github-actions ecosystem proposes bumps.
+# written against; Renovate's github-actions manager proposes bumps.
 
 on:
   push:
@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   publish:
-    uses: jbaruch/coding-policy/.github/workflows/publish-plugin.yml@d6dc758bd85799a56932c071926b5bafb061bc7e
+    uses: jbaruch/coding-policy/.github/workflows/publish-plugin.yml@d6dc758bd85799a56932c071926b5bafb061bc7e # main
     # Forward only the token the reusable workflow declares (not `inherit`).
     secrets:
       TESSL_TOKEN: ${{ secrets.TESSL_TOKEN }}
