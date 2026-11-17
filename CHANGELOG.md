@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.7 — 2026-11-17
+
+- chore(deps): make Renovate the only dependency scanner (#28)
+
 ## 0.5.6 — 2026-11-15
 
 - chore: refresh the Tessl-generated ignore block (#24)
