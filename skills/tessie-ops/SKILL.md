@@ -1,6 +1,6 @@
 ---
 name: tessie-ops
-description: "Reads and controls the owner's Tesla vehicles through the Tessie REST API using deterministic scripts: list vehicles, check the allowlist, read battery/charging/climate/locks/tires/firmware/drives and authorized drivers from cache without waking the car, and send confirmed controls (lock, unlock, climate, charging, charge limit, share destination, flash, drive tags). Triggers: 'is the car locked', 'where is the car', 'who can drive the car', 'list Tesla drivers', 'tesla battery', 'tire pressure', 'lock the tesla', 'unlock the tesla', 'start climate', 'charge limit', 'send address to the car', 'tag my drives', 'tessie', 'my vehicles'."
+description: "Reads and controls the owner's Tesla vehicles through the Tessie REST API using deterministic scripts: list vehicles, check the allowlist, read battery/charging/climate/locks/tires/firmware/drives and authorized drivers from cache without waking the car, send confirmed controls, and export monthly work-trip and work-event mileage CSVs. Triggers: 'work mileage', 'mileage expense report', 'is the car locked', 'where is the car', 'who can drive the car', 'list Tesla drivers', 'tesla battery', 'tire pressure', 'lock the tesla', 'unlock the tesla', 'start climate', 'charge limit', 'send address to the car', 'tag my drives', 'tessie', 'my vehicles'."
 ---
 
 # Tessie Ops
@@ -151,3 +151,16 @@ python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-argv.py <BASE
 Encoded input: `script: "tessie-command"`, `argv: ["set_drive_tag", "--drives", ids, "--tag", tag, "--vehicle", alias, "--confirm", confirm_with]`. Every argv value is a string.
 
 Report the accepted/refused result and finish here. Never replay uncertainty.
+
+## Step 11 — Export Work Mileage
+
+Use on request or from an owner-authorized monthly task. Read
+`references/work-mileage.md` for source gathering, the report input contract and
+the single monthly ambiguity batch. This step may use Steps 9–10 for tagging.
+
+```bash
+python3 /home/node/.claude/skills/tessl__tessie-ops/scripts/tessie-mileage.py /tmp/tessie-mileage-input.json --include-location
+```
+
+Keep the returned CSV and summary in the owner chat. Report tag outcomes
+separately from exported mileage. Finish here.

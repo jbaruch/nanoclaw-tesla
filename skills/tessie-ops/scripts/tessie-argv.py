@@ -5,7 +5,8 @@ Usage: tessie-argv.py BASE64URL
        tessie-argv.py --encode JSON_FILE
 BASE64URL is unpadded URL-safe base64 of one UTF-8 JSON object with exactly
 {script, argv}. script is tessie-vehicles, tessie-allowlist, tessie-read,
-tessie-command, tessie-confirm, tessie-late or tessie-charge; argv is a list of strings.
+tessie-command, tessie-confirm, tessie-late or tessie-charge;
+argv is a list of strings.
 Build JSON using a serializer in the caller's structured-data/code context, then encode it there.
 Only the resulting [A-Za-z0-9_-] token enters a shell command. Never interpolate
 the original alias, destination, tag or confirmation into shell source.
