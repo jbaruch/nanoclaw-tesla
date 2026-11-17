@@ -18,7 +18,9 @@ do not present an empty CSV as proof of no work mileage.
 Read the verified work calendar through the host's existing calendar tools.
 Gather complete events overlapping the month and its six-hour boundary
 windows, expanding recurring events to their actual instances. Retain calendar
-IDs and event IDs/links in the task; exclude cancelled or owner-declined events.
+IDs and event IDs/links in the task. Retain native `status`, `organizer.self` and
+the owner's attendee `responseStatus`; follow the exporter's docstring contract
+for attendance classification and batch confirmation.
 Copy native event objects to `work_events`; their `summary` is the expense purpose.
 Use exact Tessie location labels only when verified against event location
 evidence. Leave unresolved locations absent so the drives enter the same monthly
@@ -34,8 +36,9 @@ provider errors must fail the report, never become an empty flight list. Populat
 `airport_locations` labels only from verified location evidence; when matching
 requires judgment, leave it unresolved or use Jev to review that evidence. Never
 invent a location alias to force a match. No source-body text enters shell code.
-The exporter checks competing drives across month boundaries before selecting
-the month's rows; gather flight/event evidence for those boundary windows too.
+The exporter reads eligible vehicles' history through the supplied work contexts
+to check competing drives before selecting the month's rows; gather complete
+flight/event evidence for those boundary windows too.
 
 Step 11 emits the CSV string, one-line `summary`, `business` drive rows and one
 `ambiguous` list for all admitted vehicles. Save the exact CSV string as the

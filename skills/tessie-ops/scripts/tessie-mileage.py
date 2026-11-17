@@ -8,7 +8,9 @@ work_events optionally contains Google Calendar event objects from the
 verified work calendar: id, summary, start/end {dateTime with UTC offset or date}, and
 location (exact Tessie label, or absent when unresolved). Retain calendar IDs
 and original event evidence in the task. Cancelled or owner-declined events are
-omitted. Event legs use the same six-hour windows and ambiguity batch as flights;
+omitted. Only owner-organized or owner-accepted events establish attendance;
+other invitations require batch confirmation. Preserve organizer.self and the
+owner's attendee responseStatus. Event legs use the same six-hour windows as flights;
 the event summary supplies purpose. All-day dates use the report timezone and
 exclusive end date; their drives always need confirmation in the monthly batch.
 After the monthly batch, optional confirmed is [{vin_suffix, drive_id, purpose}]
@@ -38,8 +40,10 @@ No natural-language location matching.
 
 Reads all eligible vehicles via the existing host broker. Tessie defaults to
 miles; odometer_distance is used without conversion. Local drive start dates
-select the exported month, after checking competitors in six hours of adjacent
-month context. Duplicate identical drive IDs are counted once; conflicting
+select the exported month, after checking competitors across the supplied work
+contexts. Read history from epoch through six hours after the later of month end
+or the last context's arrival/end: an outbound competitor may start arbitrarily
+early and still end inside a departure window. Duplicate drive IDs count once; conflicting
 duplicates or malformed provider rows fail the whole report, never partial CSV.
 Stdout JSON: {month, csv, summary, business, ambiguous}. business/ambiguous rows
 carry vehicle (alias, vin_suffix), drive_id, date, from, to, miles, purpose;
@@ -191,6 +195,11 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
                 "arrival": arrival,
                 "location": location,
                 "closed": all_day,
+                "accepted": event.get("organizer", {}).get("self") is True
+                or any(
+                    attendee.get("self") is True and attendee.get("responseStatus") == "accepted"
+                    for attendee in objects(event.get("attendees", []))
+                ),
             }
         )
     inventory = fetch_inventory(rt.client)
@@ -204,8 +213,10 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
             "drives",
             include_location=True,
             query={
-                "from": int((start - timedelta(hours=6)).timestamp()),
-                "to": int((end + timedelta(hours=6)).timestamp()),
+                "from": 0,
+                "to": int(
+                    (max([end] + [c["arrival"] for c in contexts]) + timedelta(hours=6)).timestamp()
+                ),
             },
         )["data"]
         for drive in objects(payload["results"]):
@@ -272,6 +283,8 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
             reason = None
             if len(matches) != 1:
                 reason = "uncertain trip, event or location match"
+            elif "location" in contexts[matches[0][0]] and not contexts[matches[0][0]]["accepted"]:
+                reason = "event attendance requires confirmation"
             elif matches[0][1] == "within" or (
                 "location" in contexts[matches[0][0]] and contexts[matches[0][0]]["closed"]
             ):
