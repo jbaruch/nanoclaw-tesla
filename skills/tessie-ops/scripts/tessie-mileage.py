@@ -48,6 +48,7 @@ early and still end inside a departure window. Each read limits results to 100
 for the host's 1 MiB response cap; full windows are subdivided until complete.
 An indivisible full window fails closed. Duplicate drive IDs count once; conflicting
 duplicates or malformed provider rows fail the whole report, never partial CSV.
+Drive tag must be null or a string.
 Stdout JSON: {month, csv, summary, business, ambiguous}. business/ambiguous rows
 carry vehicle (alias, vin_suffix), drive_id, date, from, to, miles, purpose;
 ambiguous adds reason. CSV columns: date,from,to,miles,purpose,vehicle. Text cells
@@ -282,6 +283,9 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
             origin, destination = drive["starting_location"], drive["ending_location"]
             if not all(isinstance(v, str) for v in (origin, destination)):
                 raise ValueError("invalid drive locations")
+            tag = drive.get("tag")
+            if tag is not None and not isinstance(tag, str):
+                raise ValueError("invalid drive tag")
             matches, possible = [], []
             for index, context in enumerate(contexts):
                 outbound = timedelta(0) <= context["departure"] - finish <= timedelta(hours=6)
@@ -328,7 +332,7 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
                 "location" in contexts[matches[0][0]] and contexts[matches[0][0]]["closed"]
             ):
                 reason = "drive during trip or all-day event needs location confirmation"
-            elif drive.get("tag") and drive["tag"] != "Business":
+            elif tag and tag != "Business":
                 reason = "existing tag requires confirmation"
             candidates.append((row, matches, reason))
     decisions = {}

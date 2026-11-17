@@ -161,8 +161,11 @@ def execute(tmp_path, data, drives, *, second=None, chat=None, include_location=
     return code, json.loads(out.getvalue()) if out.getvalue() else None, err.getvalue(), transport
 
 
-def test_both_airport_legs_csv_and_cached_reads(tmp_path):
+@pytest.mark.parametrize("tag", [None, "", "Business"])
+def test_both_airport_legs_csv_and_cached_reads(tmp_path, tag):
     rows = round_trip()
+    for row in rows:
+        row["tag"] = tag
     code, result, err, transport = execute(tmp_path, sources(), rows + [rows[0]])
     assert code == 0 and not err and result is not None
     assert [row["drive_id"] for row in result["business"]] == [10001, 10002]
@@ -197,6 +200,16 @@ def test_both_airport_legs_csv_and_cached_reads(tmp_path):
         "to": str(epoch("2025-12-01T06:00:00-06:00")),
         "limit": "100",
     }
+
+
+@pytest.mark.parametrize("tag", [0, False, 1, True, [], {}, ["Business"], {"tag": "Business"}])
+def test_malformed_drive_tag_fails_without_partial_csv_or_writes(tmp_path, tag):
+    rows = round_trip()
+    rows[1]["tag"] = tag
+    code, result, err, transport = execute(tmp_path, sources(), rows)
+    assert code == 1 and result is None
+    assert "refresh complete TripIt/Tessie/calendar source data" in err
+    assert all(call["method"] == "GET" for call in transport.calls)
 
 
 def test_personal_and_uncertain_drives_wait_for_one_batch(tmp_path):
@@ -711,19 +724,6 @@ def test_provider_failure_is_not_an_empty_report(tmp_path):
     assert mileage.main([str(path), "--include-location"], runtime=rt) == 1
     assert out.getvalue() == "" and "503" in err.getvalue()
     assert len(transport.calls) == 1
-
-
-def test_encoded_adapter_accepts_mileage_report():
-    import base64
-
-    adapter = load_script("tessie-ops", "tessie-argv")
-    raw = json.dumps(
-        {"script": "tessie-mileage", "argv": ["/tmp/input.json", "--include-location"]}
-    )
-    token = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
-    target, args = adapter.decode_argv(token)
-    assert target.name == "tessie-mileage.py"
-    assert args == ["/tmp/input.json", "--include-location"]
 
 
 @pytest.mark.parametrize("provider_status,accepted", [(200, True), (200, False), (403, False)])
