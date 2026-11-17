@@ -18,7 +18,9 @@ do not present an empty CSV as proof of no work mileage.
 Read the verified work calendar through the host's existing calendar tools.
 Gather complete events overlapping the month and its six-hour boundary
 windows, expanding recurring events to their actual instances. Retain calendar
-IDs and event IDs/links in the task. Retain native `status`, `organizer.self` and
+IDs and event IDs/links in the task. Exclude Travel events (title or category),
+all-day Home placeholders, week-number events and owner-declined events before
+creating work contexts. Retain category when supplied, native `status`, `organizer.self` and
 the owner's attendee `responseStatus`; follow the exporter's docstring contract
 for attendance classification and batch confirmation.
 Copy native event objects to `work_events`; their `summary` is the expense purpose.

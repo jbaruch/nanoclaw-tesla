@@ -7,8 +7,9 @@ Tessie location label -> IATA code), bookings, and tripit (TripIt JSON response)
 work_events optionally contains Google Calendar event objects from the
 verified work calendar: id, summary, start/end {dateTime with UTC offset or date}, and
 location (exact Tessie label, or absent when unresolved). Retain calendar IDs
-and original event evidence in the task. Cancelled or owner-declined events are
-omitted. Only owner-organized or owner-accepted events establish attendance;
+and original event evidence in the task. Omit cancelled, owner-declined, Travel
+(title or category), all-day Home and week-number events. Preserve category when
+the source supplies it. Only owner-organized or owner-accepted events establish attendance;
 other invitations require batch confirmation. Preserve organizer.self and the
 owner's attendee responseStatus. Event legs use the same six-hour windows as flights;
 the event summary supplies purpose. All-day dates use the report timezone and
@@ -43,7 +44,9 @@ miles; odometer_distance is used without conversion. Local drive start dates
 select the exported month, after checking competitors across the supplied work
 contexts. Read history from epoch through six hours after the later of month end
 or the last context's arrival/end: an outbound competitor may start arbitrarily
-early and still end inside a departure window. Duplicate drive IDs count once; conflicting
+early and still end inside a departure window. Each read limits results to 100
+for the host's 1 MiB response cap; full windows are subdivided until complete.
+An indivisible full window fails closed. Duplicate drive IDs count once; conflicting
 duplicates or malformed provider rows fail the whole report, never partial CSV.
 Stdout JSON: {month, csv, summary, business, ambiguous}. business/ambiguous rows
 carry vehicle (alias, vin_suffix), drive_id, date, from, to, miles, purpose;
@@ -120,7 +123,14 @@ def work_trips(data: dict[str, Any]) -> list[dict[str, Any]]:
             booked.setdefault(key, set()).add(purpose)
     grouped: dict[str, list[dict[str, Any]]] = {}
     for air in objects(data["tripit"].get("AirObject", [])):
-        grouped.setdefault(str(air["trip_id"]), []).extend(objects(air["Segment"]))
+        segments = objects(air["Segment"])
+        for segment in segments:
+            if not all(
+                isinstance(segment.get(field), str) and re.fullmatch(r"[A-Z]{3}", segment[field])
+                for field in ("start_airport_code", "end_airport_code")
+            ):
+                raise ValueError("invalid TripIt airport code")
+        grouped.setdefault(str(air["trip_id"]), []).extend(segments)
     trips = []
     for segments in grouped.values():
         purposes = set().union(*(booked.get(flight_key(s), set()) for s in segments))
@@ -174,6 +184,20 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
         if not all(isinstance(event[key], str) and event[key].strip() for key in ("id", "summary")):
             raise ValueError("missing work event identity or purpose")
         all_day = "date" in event["start"]
+        title = event["summary"].strip().casefold()
+        category = event.get("category", "")
+        if not isinstance(category, str):
+            raise ValueError("invalid work event category")
+        if (
+            "travel" in title
+            or "travel" in category.casefold()
+            or (all_day and title == "home")
+            or re.search(r"\bweek(?:\s+number)?\s*#?\s*\d+\b", title)
+        ):
+            continue
+        organizer = event.get("organizer", {})
+        if not isinstance(organizer, dict):
+            raise ValueError("invalid work event organizer")
         if all_day:
             departure = datetime.strptime(event["start"]["date"], "%Y-%m-%d").replace(tzinfo=zone)
             arrival = datetime.strptime(event["end"]["date"], "%Y-%m-%d").replace(tzinfo=zone)
@@ -195,7 +219,7 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
                 "arrival": arrival,
                 "location": location,
                 "closed": all_day,
-                "accepted": event.get("organizer", {}).get("self") is True
+                "accepted": organizer.get("self") is True
                 or any(
                     attendee.get("self") is True and attendee.get("responseStatus") == "accepted"
                     for attendee in objects(event.get("attendees", []))
@@ -207,19 +231,34 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
     seen = {}
     for entry in eligible_entries(allowlist, inventory):
         vehicle = select_vehicle(entry.vin, allowlist, inventory)
-        payload = read_vehicle(
-            rt.client,
-            vehicle,
-            "drives",
-            include_location=True,
-            query={
-                "from": 0,
-                "to": int(
+        windows = [
+            (
+                0,
+                int(
                     (max([end] + [c["arrival"] for c in contexts]) + timedelta(hours=6)).timestamp()
                 ),
-            },
-        )["data"]
-        for drive in objects(payload["results"]):
+            )
+        ]
+        drives = []
+        while windows:
+            lower, upper = windows.pop()
+            payload = read_vehicle(
+                rt.client,
+                vehicle,
+                "drives",
+                include_location=True,
+                query={"from": lower, "to": upper, "limit": 100},
+            )["data"]
+            rows = objects(payload["results"])
+            if len(rows) >= 100:
+                if upper - lower <= 1:
+                    raise ValueError("drive history window cannot establish complete coverage")
+                middle = (lower + upper) // 2
+                # Overlap boundaries; the existing ID check removes duplicates.
+                windows.extend([(middle, upper), (lower, middle)])
+            else:
+                drives.extend(rows)
+        for drive in drives:
             drive_id = drive["id"]
             if type(drive_id) is not int or drive_id <= 0:
                 raise ValueError("invalid drive id")

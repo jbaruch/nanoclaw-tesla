@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -142,15 +142,14 @@ def execute(tmp_path, data, drives, *, second=None, chat=None, include_location=
 
         def queried_drives(rows=rows):
             query = transport.calls[-1]["query"]
-            return json_response(
-                {
-                    "results": [
-                        row
-                        for row in rows
-                        if int(query["from"]) <= row["started_at"] < int(query["to"])
-                    ]
-                }
-            )
+            selected = [
+                row for row in rows if int(query["from"]) <= row["started_at"] <= int(query["to"])
+            ][: int(query.get("limit", len(rows)))]
+            response = json_response({"results": selected})
+            # NativeTessieNetwork caps every drives response at 1 MiB.
+            if len(response.body) > 1024 * 1024:
+                return json_response({"error": "response exceeds 1 MiB"}, 502)
+            return response
 
         transport.routes[("GET", f"/{vin}/drives")] = queried_drives
     kwargs = {"chat": chat} if chat else {}
@@ -196,6 +195,7 @@ def test_both_airport_legs_csv_and_cached_reads(tmp_path):
     assert query == {
         "from": "0",
         "to": str(epoch("2025-12-01T06:00:00-06:00")),
+        "limit": "100",
     }
 
 
@@ -290,6 +290,82 @@ def test_tripit_error_fails_without_partial_csv_or_vehicle_reads(tmp_path, with_
     assert transport.calls == []
 
 
+@pytest.mark.parametrize("field", ["start_airport_code", "end_airport_code"])
+@pytest.mark.parametrize("code", [None, "", "bna", "BNAA", 123, "missing"])
+def test_invalid_airport_code_fails_before_personal_drive_can_match(tmp_path, field, code):
+    data = sources()
+    unbooked = segment(
+        "2025-11-01", "10:00:00", "BNA", "SEA", "999", "2025-11-01", "14:00:00", "-05:00"
+    )
+    if code == "missing":
+        del unbooked[field]
+    else:
+        unbooked[field] = code
+    data["tripit"]["AirObject"][0]["Segment"].insert(0, unbooked)
+    personal = drive(
+        20001, "2025-11-01T06:00:00-05:00", "2025-11-01T06:30:00-05:00", "Home", "Friend's House"
+    )
+    status, result, err, transport = execute(tmp_path, data, [personal])
+    assert status == 1 and result is None and "Cannot build mileage report" in err
+    assert transport.calls == []
+
+
+@pytest.mark.parametrize("competitor", [False, True])
+def test_large_history_fits_broker_cap_and_preserves_old_competitors(tmp_path, competitor):
+    rows = round_trip()
+    history = []
+    for i in range(4000):
+        begin = datetime.fromisoformat("2010-01-01T09:00:00-06:00") + timedelta(days=i)
+        history.append(
+            drive(
+                30000 + i,
+                begin.isoformat(),
+                (begin + timedelta(minutes=30)).isoformat(),
+                "Home",
+                "Personal errand",
+            )
+        )
+    if competitor:
+        history.append(
+            drive(
+                40001,
+                "2010-01-01T10:00:00-06:00",
+                "2025-11-01T08:15:00-05:00",
+                "Home",
+                "Nashville International Airport",
+            )
+        )
+    assert len(json_response({"results": history + rows}).body) > 1024 * 1024
+    code, result, err, transport = execute(tmp_path, sources(), history + rows)
+    assert code == 0 and not err and result is not None
+    assert [r["drive_id"] for r in result["business"]] == (
+        [10002] if competitor else [10001, 10002]
+    )
+    assert [r["drive_id"] for r in result["ambiguous"]] == ([10001] if competitor else [])
+    assert len(list(csv.reader(io.StringIO(result["csv"])))) == (2 if competitor else 3)
+    assert all(c["method"] == "GET" for c in transport.calls)
+
+
+def test_full_indivisible_history_window_fails_without_partial_csv(tmp_path):
+    rows = [dict(round_trip()[0], id=50000 + i) for i in range(100)]
+    code, result, err, _ = execute(tmp_path, sources(), rows)
+    assert code == 1 and result is None and "Cannot build mileage report" in err
+
+
+def test_later_history_window_failure_discards_partial_report(tmp_path, monkeypatch):
+    original = mileage.read_vehicle
+
+    def failing_read(*args, **kwargs):
+        if kwargs["query"]["from"] > 0:
+            raise mileage.TessieError("Refresh Tessie history after provider failure")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mileage, "read_vehicle", failing_read)
+    rows = [dict(round_trip()[0], id=50000 + i) for i in range(100)]
+    code, result, err, _ = execute(tmp_path, sources(), rows)
+    assert code == 1 and result is None and "Refresh Tessie history" in err
+
+
 @pytest.mark.parametrize("month,expected", [("2025-10", 10001), ("2025-11", 10002)])
 @pytest.mark.parametrize(
     "departure,times",
@@ -382,6 +458,49 @@ def test_work_calendar_event_legs_export_with_event_name(tmp_path):
     assert [row[4] for row in csv_rows[1:]] == ['Work, "Meetup"'] * 2
     assert "2 work drives, 22.60 miles" in result["summary"]
     assert all(c["method"] == "GET" for c in transport.calls)
+
+
+@pytest.mark.parametrize(
+    "summary,category,all_day",
+    [
+        ("Travel to Work Meetup", "", False),
+        ("travel to Work Meetup", "", False),
+        ("Work Meetup", "Travel", False),
+        ("Home", "", True),
+        ("Week 46", "", False),
+        ("Week #46", "", True),
+        ("Week number 46", "", True),
+    ],
+)
+def test_calendar_placeholders_are_excluded_from_business_and_batch(
+    tmp_path, summary, category, all_day
+):
+    data = event_sources()
+    event = data["work_events"][0]
+    event.update(summary=summary, category=category)
+    if all_day:
+        event.update(start={"date": "2025-11-10"}, end={"date": "2025-11-11"})
+    code, result, err, _ = execute(tmp_path, data, event_drives())
+    assert code == 0 and not err and result is not None
+    assert result["business"] == [] and result["ambiguous"] == []
+    assert len(list(csv.reader(io.StringIO(result["csv"])))) == 1
+
+
+def test_timed_home_event_remains_work_evidence(tmp_path):
+    data = event_sources()
+    data["work_events"][0]["summary"] = "Home"
+    code, result, err, _ = execute(tmp_path, data, event_drives())
+    assert code == 0 and not err and result is not None
+    assert len(result["business"]) == 2 and result["ambiguous"] == []
+
+
+@pytest.mark.parametrize("organizer", ["invalid", None, []])
+def test_malformed_event_organizer_returns_structured_error(tmp_path, organizer):
+    data = event_sources()
+    data["work_events"][0]["organizer"] = organizer
+    code, result, err, transport = execute(tmp_path, data, event_drives())
+    assert code == 1 and result is None and "Cannot build mileage report" in err
+    assert transport.calls == []
 
 
 def test_uncertain_event_drives_use_existing_batch_confirmation(tmp_path):
