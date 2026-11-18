@@ -19,10 +19,6 @@
       "groupName": "non-major dependencies"
     },
     {
-      "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": true
-    },
-    {
       "matchManagers": [
         "github-actions"
       ],

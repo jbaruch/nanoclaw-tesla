@@ -76,7 +76,7 @@ dependency scanner, running in full mode before 6am on Monday. Its native
 and [GitHub Actions](https://docs.renovatebot.com/modules/manager/github-actions/)
 managers renew Python dependencies, external action and reusable workflow digests,
 and the exact CI Python patch within 3.11; the enabled pre-commit manager renews hook pins.
-Minor, patch and digest updates share one PR; major updates require Dependency
-Dashboard approval. Renovate uses `chore(deps)` commits and opens at most five PRs
+Minor, patch and digest updates share one PR; major updates open PRs automatically.
+Renovate uses `chore(deps)` commits and opens at most five PRs
 at once. After a Python dependency bump, regenerate `requirements-dev.lock` with
 the command above and run the checks in [.github/workflows/test.yml](.github/workflows/test.yml).
