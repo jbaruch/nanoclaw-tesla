@@ -46,6 +46,13 @@ def test_plugin_manifest_declares_every_skill_and_rule_that_exists() -> None:
     assert set(manifest["rules"]) == on_disk_rules
 
 
+def test_renovate_opens_updates_without_dashboard_approval() -> None:
+    config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+    assert config["prConcurrentLimit"] == 5
+    assert not config.get("dependencyDashboardApproval")
+    assert all(not rule.get("dependencyDashboardApproval") for rule in config["packageRules"])
+
+
 def test_tessl_json_floats_the_managed_policy_dependency() -> None:
     config = json.loads((ROOT / "tessl.json").read_text(encoding="utf-8"))
     assert config["mode"] == "managed"
