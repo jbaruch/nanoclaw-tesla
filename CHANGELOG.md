@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.9 — 2026-11-18
+
+- chore(renovate): drop the major update approval gate (#33)
+
 ## 0.5.8 — 2026-11-17
 
 - chore(deps): bump ruff to 0.17.4 in the dev lock (#30)
