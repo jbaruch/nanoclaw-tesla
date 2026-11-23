@@ -4,16 +4,6 @@
 Usage: tessie-mileage.py INPUT_JSON --include-location
 INPUT_JSON contains month (YYYY-MM), timezone (IANA), airport_locations (exact
 Tessie location label -> IATA code), bookings, and tripit (TripIt JSON response).
-work_events optionally contains Google Calendar event objects from the
-verified work calendar: id, summary, start/end {dateTime with UTC offset or date}, and
-location (exact Tessie label, or absent when unresolved). Retain calendar IDs
-and original event evidence in the task. Omit cancelled, owner-declined, Travel
-(title or category), all-day Home and week-number events. Preserve category when
-the source supplies it. Only owner-organized or owner-accepted events establish attendance;
-other invitations require batch confirmation. Preserve organizer.self and the
-owner's attendee responseStatus. Event legs use the same six-hour windows as flights;
-the event summary supplies purpose. All-day dates use the report timezone and
-exclusive end date; their drives always need confirmation in the monthly batch.
 After the monthly batch, optional confirmed is [{vin_suffix, drive_id, purpose}]
 copied ONLY from explicit owner business decisions in this task. These decisions
 may include ambiguous rows in the CSV; the file grants no tag-write authority.
@@ -23,11 +13,12 @@ baruchs@port.io, or the Navan browser behind the Port login. Each has source
 flights [{date: YYYY-MM-DD, from: IATA, to: IATA, airline: IATA, number: string}].
 This is an extraction contract, NOT a Navan API schema; retain original mail or
 browser evidence in the task. Personal mail/calendars and destination guesses
-are not work evidence. Recognition requiring judgment belongs to the caller.
+are not work evidence; no other work signal is accepted. Recognition requiring
+judgment belongs to the caller.
 
 tripit uses live AirObject (singleton or list), trip_id, Segment (singleton or
-list), StartDateTime/EndDateTime {date,time,utc_offset}, start_airport_code,
-end_airport_code, marketing_airline_code, marketing_flight_number. An exact
+list), StartDateTime/EndDateTime {date,time,utc_offset (+HH:MM or TripIt's -H:MM)},
+start_airport_code, end_airport_code, marketing_airline_code, marketing_flight_number. An exact
 Navan date/airports/flight match makes that TripIt trip work. Use the complete
 trip, including flights outside the report month, to retain both airport legs.
 Airport legs must end within six hours before departure or start within six
@@ -41,9 +32,9 @@ No natural-language location matching.
 
 Reads all eligible vehicles via the existing host broker. Tessie defaults to
 miles; odometer_distance is used without conversion. Local drive start dates
-select the exported month, after checking competitors across the supplied work
-contexts. Read history from epoch through six hours after the later of month end
-or the last context's arrival/end: an outbound competitor may start arbitrarily
+select the exported month, after checking competitors across the matched work
+trips. Read history from epoch through six hours after the later of month end
+or the last trip's arrival: an outbound competitor may start arbitrarily
 early and still end inside a departure window. Each read limits results to 100
 for the host's 1 MiB response cap; full windows are subdivided until complete.
 An indivisible full window fails closed. Duplicate drive IDs count once; conflicting
@@ -102,7 +93,9 @@ def flight_key(segment: dict[str, Any]) -> tuple[str, ...]:
 
 
 def flight_time(value: dict[str, str]) -> datetime:
-    return datetime.fromisoformat(value["date"] + "T" + value["time"] + value["utc_offset"])
+    # TripIt may send a one-digit hour offset such as -8:00; fromisoformat needs -08:00.
+    offset = re.sub(r"^([+-])(\d):", r"\g<1>0\2:", value["utc_offset"])
+    return datetime.fromisoformat(value["date"] + "T" + value["time"] + offset)
 
 
 def work_trips(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -176,57 +169,6 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
     ):
         raise ValueError("invalid airport locations")
     contexts = work_trips(data)
-    for event in objects(data.get("work_events", [])):
-        if event.get("status") == "cancelled" or any(
-            attendee.get("self") and attendee.get("responseStatus") == "declined"
-            for attendee in objects(event.get("attendees", []))
-        ):
-            continue
-        if not all(isinstance(event[key], str) and event[key].strip() for key in ("id", "summary")):
-            raise ValueError("missing work event identity or purpose")
-        all_day = "date" in event["start"]
-        title = event["summary"].strip().casefold()
-        category = event.get("category", "")
-        if not isinstance(category, str):
-            raise ValueError("invalid work event category")
-        if (
-            "travel" in title
-            or "travel" in category.casefold()
-            or (all_day and title == "home")
-            or re.search(r"\bweek(?:\s+number)?\s*#?\s*\d+\b", title)
-        ):
-            continue
-        organizer = event.get("organizer", {})
-        if not isinstance(organizer, dict):
-            raise ValueError("invalid work event organizer")
-        if all_day:
-            departure = datetime.strptime(event["start"]["date"], "%Y-%m-%d").replace(tzinfo=zone)
-            arrival = datetime.strptime(event["end"]["date"], "%Y-%m-%d").replace(tzinfo=zone)
-        else:
-            departure = datetime.fromisoformat(event["start"]["dateTime"])
-            arrival = datetime.fromisoformat(event["end"]["dateTime"])
-        location = event.get("location", "")
-        if (
-            departure.utcoffset() is None
-            or arrival.utcoffset() is None
-            or arrival <= departure
-            or not isinstance(location, str)
-        ):
-            raise ValueError("invalid work event time or location")
-        contexts.append(
-            {
-                "purpose": event["summary"],
-                "departure": departure,
-                "arrival": arrival,
-                "location": location,
-                "closed": all_day,
-                "accepted": organizer.get("self") is True
-                or any(
-                    attendee.get("self") is True and attendee.get("responseStatus") == "accepted"
-                    for attendee in objects(event.get("attendees", []))
-                ),
-            }
-        )
     inventory = fetch_inventory(rt.client)
     candidates = []
     seen = {}
@@ -296,19 +238,9 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
                 )
                 if outbound or inbound or within:
                     possible.append(context["purpose"])
-                destination_matches = (
-                    bool(context["location"]) and destination == context["location"]
-                    if "location" in context
-                    else airports.get(destination) == context["origin"]
-                )
-                origin_matches = (
-                    bool(context["location"]) and origin == context["location"]
-                    if "location" in context
-                    else airports.get(origin) == context["destination"]
-                )
-                if outbound and destination_matches:
+                if outbound and airports.get(destination) == context["origin"]:
                     matches.append((index, "departure"))
-                elif inbound and origin_matches:
+                elif inbound and airports.get(origin) == context["destination"]:
                     matches.append((index, "return"))
                 elif within:
                     matches.append((index, "within"))
@@ -325,13 +257,9 @@ def report(data: dict[str, Any], rt: Runtime, allowlist: Any) -> dict[str, Any]:
             }
             reason = None
             if len(matches) != 1:
-                reason = "uncertain trip, event or location match"
-            elif "location" in contexts[matches[0][0]] and not contexts[matches[0][0]]["accepted"]:
-                reason = "event attendance requires confirmation"
-            elif matches[0][1] == "within" or (
-                "location" in contexts[matches[0][0]] and contexts[matches[0][0]]["closed"]
-            ):
-                reason = "drive during trip or all-day event needs location confirmation"
+                reason = "uncertain trip or location match"
+            elif matches[0][1] == "within":
+                reason = "drive during trip needs location confirmation"
             elif tag and tag != "Business":
                 reason = "existing tag requires confirmation"
             candidates.append((row, matches, reason))
@@ -409,7 +337,7 @@ def main(argv: Sequence[str] | None = None, *, runtime: Runtime | None = None) -
         except (OSError, ValueError, KeyError, TypeError, OverflowError) as exc:
             raise TessieError(
                 "Cannot build mileage report. Check INPUT_JSON against the script contract "
-                "and refresh complete TripIt/Tessie/calendar source data; no tags were changed.",
+                "and refresh complete TripIt/Tessie source data; no tags were changed.",
                 code="invalid_mileage_data",
             ) from exc
         emit(result, rt.out)
