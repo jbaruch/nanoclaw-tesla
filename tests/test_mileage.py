@@ -438,17 +438,33 @@ def test_competitors_outside_fixed_month_window_need_confirmation(
     assert all(call["method"] == "GET" for call in transport.calls)
 
 
-@pytest.mark.parametrize("change", ["no_booking", "wrong_flight", "wrong_date", "wrong_airport"])
-def test_destination_alone_is_never_work(tmp_path, change):
+def test_destination_alone_is_never_work(tmp_path):
     data = sources()
-    if change == "no_booking":
-        data["bookings"] = []
-    else:
-        field = {"wrong_flight": "number", "wrong_date": "date", "wrong_airport": "from"}[change]
-        data["bookings"][0]["flights"][0][field] = "mismatch"
+    data["bookings"] = []
     code, result, _, transport = execute(tmp_path, data, round_trip())
     assert code == 0 and result is not None and result["business"] == []
     assert all(c["method"] == "GET" for c in transport.calls)
+
+
+@pytest.mark.parametrize("field", ["number", "date", "from", "airline"])
+def test_booking_missing_from_tripit_is_source_gap(tmp_path, field):
+    data = sources()
+    data["bookings"][0]["flights"][0][field] = "mismatch"
+    code, result, err, transport = execute(tmp_path, data, round_trip())
+    assert code == 1 and result is None
+    assert "missing from TripIt" in err and "mismatch" in err
+    assert not any(c["path"].endswith("/drives") for c in transport.calls)
+
+
+def test_segment_without_airline_code_still_bounds_trip(tmp_path):
+    # TripIt v1 AirObject may carry marketing_airline without marketing_airline_code.
+    data = sources()
+    unmatched = data["tripit"]["AirObject"][0]["Segment"][1]
+    del unmatched["marketing_airline_code"]
+    unmatched["marketing_airline"] = "Delta"
+    code, result, err, _ = execute(tmp_path, data, round_trip())
+    assert code == 0 and not err and result is not None
+    assert [row["drive_id"] for row in result["business"]] == [10001, 10002]
 
 
 def test_trip_crossing_month_boundary_retains_return_and_midnight_pickup(tmp_path):

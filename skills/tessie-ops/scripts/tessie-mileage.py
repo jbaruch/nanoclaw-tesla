@@ -19,8 +19,11 @@ judgment belongs to the caller.
 tripit uses live AirObject (singleton or list), trip_id, Segment (singleton or
 list), StartDateTime/EndDateTime {date,time,utc_offset (+HH:MM or TripIt's -H:MM)},
 start_airport_code, end_airport_code, marketing_airline_code, marketing_flight_number. An exact
-Navan date/airports/flight match makes that TripIt trip work. Use the complete
-trip, including flights outside the report month, to retain both airport legs.
+Navan date/airports/flight match makes that TripIt trip work. A segment without
+marketing_airline_code never matches but still bounds its trip. A booked flight
+absent from TripIt fails the report as mileage_source_gap (exit 1), never a
+partial CSV. Use the complete trip, including flights outside the report month,
+to retain both airport legs.
 Airport legs must end within six hours before departure or start within six
 hours after arrival, at the exact mapped airport. Multiple candidates for a
 flight leg, conflicting trips, unknown locations and existing non-Business
@@ -87,7 +90,8 @@ def flight_key(segment: dict[str, Any]) -> tuple[str, ...]:
         segment["StartDateTime"]["date"],
         segment["start_airport_code"],
         segment["end_airport_code"],
-        segment["marketing_airline_code"],
+        # TripIt may omit the code (marketing_airline only); such a segment never matches.
+        segment.get("marketing_airline_code"),
         str(segment["marketing_flight_number"]),
     )
 
@@ -125,6 +129,16 @@ def work_trips(data: dict[str, Any]) -> list[dict[str, Any]]:
             ):
                 raise ValueError("invalid TripIt airport code")
         grouped.setdefault(str(air["trip_id"]), []).extend(segments)
+    listed = {flight_key(s) for segments in grouped.values() for s in segments}
+    missing = sorted(" ".join(key) for key in booked if key not in listed)
+    if missing:
+        raise TessieError(
+            "Navan booking flights are missing from TripIt: "
+            + "; ".join(missing)
+            + ". Add or correct them in TripIt (e.g. codeshare flight numbers), then re-run; "
+            "no CSV was produced and no tags were changed.",
+            code="mileage_source_gap",
+        )
     trips = []
     for segments in grouped.values():
         purposes = set().union(*(booked.get(flight_key(s), set()) for s in segments))
