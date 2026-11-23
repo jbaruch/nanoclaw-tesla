@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.10 — 2026-11-23
+
+- feat(tesla): log Navan-trip work drives for expenses (#32)
+
 ## 0.5.9 — 2026-11-18
 
 - chore(renovate): drop the major update approval gate (#33)
