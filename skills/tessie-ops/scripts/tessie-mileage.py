@@ -85,7 +85,7 @@ def objects(value: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def flight_key(segment: dict[str, Any]) -> tuple[str, ...]:
+def flight_key(segment: dict[str, Any]) -> tuple[str | None, ...]:
     return (
         segment["StartDateTime"]["date"],
         segment["start_airport_code"],
@@ -105,7 +105,7 @@ def flight_time(value: dict[str, str]) -> datetime:
 def work_trips(data: dict[str, Any]) -> list[dict[str, Any]]:
     if "Error" in data["tripit"]:
         raise ValueError("TripIt source returned an error; refresh the source")
-    booked: dict[tuple[str, ...], set[str]] = {}
+    booked: dict[tuple[str | None, ...], set[str]] = {}
     for booking in objects(data["bookings"]):
         if booking["source"] not in {"port-mail-ingress", "navan-browser"} or (
             booking["account"] != "baruchs@port.io"
@@ -130,7 +130,7 @@ def work_trips(data: dict[str, Any]) -> list[dict[str, Any]]:
                 raise ValueError("invalid TripIt airport code")
         grouped.setdefault(str(air["trip_id"]), []).extend(segments)
     listed = {flight_key(s) for segments in grouped.values() for s in segments}
-    missing = sorted(" ".join(key) for key in booked if key not in listed)
+    missing = sorted(" ".join(map(str, key)) for key in booked if key not in listed)
     if missing:
         raise TessieError(
             "Navan booking flights are missing from TripIt: "
