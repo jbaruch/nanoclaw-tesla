@@ -1,0 +1,596 @@
+"""Replay documented Tessie/TripIt shapes; Navan rows are explicit extractions.
+
+Shape evidence: https://developer.tessie.com/reference/get-drives (results,
+started_at/ended_at, odometer_distance, tag) and
+https://tripit.github.io/api/doc/v1/ (AirObject/Segment/StartDateTime).
+Fixtures are synthetic; no live account, booking, vehicle or provider writes.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import json
+from datetime import datetime, timedelta
+
+import pytest
+
+from support import (
+    BRADBURY,
+    READ_CHAT,
+    RUSTLER,
+    FakeTransport,
+    inventory_payload,
+    json_response,
+    load_script,
+    make_runtime,
+)
+
+mileage = load_script("tessie-ops", "tessie-mileage")
+
+
+def epoch(value):
+    return int(datetime.fromisoformat(value).timestamp())
+
+
+def segment(date, time, origin, destination, number, arrival_date, arrival_time, offset):
+    return {
+        "StartDateTime": {"date": date, "time": time, "utc_offset": offset},
+        "EndDateTime": {"date": arrival_date, "time": arrival_time, "utc_offset": offset},
+        "start_airport_code": origin,
+        "end_airport_code": destination,
+        "marketing_airline_code": "DL",
+        "marketing_flight_number": number,
+    }
+
+
+def sources():
+    return {
+        "month": "2025-11",
+        "timezone": "America/Chicago",
+        "airport_locations": {"Nashville International Airport": "BNA"},
+        "bookings": [
+            {
+                "source": "port-mail-ingress",
+                "account": "baruchs@port.io",
+                "purpose": 'Work, "Conference"',
+                "flights": [
+                    {
+                        "date": "2025-11-01",
+                        "from": "BNA",
+                        "to": "SEA",
+                        "airline": "DL",
+                        "number": "123",
+                    }
+                ],
+            }
+        ],
+        "tripit": {
+            "AirObject": [
+                {
+                    "id": "1413",
+                    "trip_id": "426",
+                    "Segment": [
+                        segment(
+                            "2025-11-01",
+                            "10:00:00",
+                            "BNA",
+                            "SEA",
+                            "123",
+                            "2025-11-01",
+                            "14:00:00",
+                            "-05:00",
+                        ),
+                        segment(
+                            "2025-11-05",
+                            "14:00:00",
+                            "SEA",
+                            "BNA",
+                            "321",
+                            "2025-11-05",
+                            "18:00:00",
+                            "-06:00",
+                        ),
+                    ],
+                }
+            ]
+        },
+    }
+
+
+def drive(drive_id, begin, end, origin, destination, miles=12.345, tag=None):
+    # odometer_distance is the documented API field, not the old distance stub.
+    return {
+        "id": drive_id,
+        "started_at": epoch(begin),
+        "ended_at": epoch(end),
+        "starting_location": origin,
+        "ending_location": destination,
+        "starting_latitude": 36.1,
+        "starting_longitude": -86.7,
+        "ending_latitude": 36.2,
+        "ending_longitude": -86.8,
+        "odometer_distance": miles,
+        "tag": tag,
+    }
+
+
+def round_trip():
+    return [
+        drive(
+            10001,
+            "2025-11-01T08:00:00-05:00",
+            "2025-11-01T08:30:00-05:00",
+            "Home, Nashville",
+            "Nashville International Airport",
+        ),
+        drive(
+            10002,
+            "2025-11-05T19:00:00-06:00",
+            "2025-11-05T19:30:00-06:00",
+            "Nashville International Airport",
+            "Home, Nashville",
+            10.25,
+        ),
+    ]
+
+
+def execute(tmp_path, data, drives, *, second=None, chat=None, include_location=True):
+    transport = FakeTransport({("GET", "/vehicles"): json_response(inventory_payload())})
+    for vin, rows in ((RUSTLER, drives), (BRADBURY, second or [])):
+        transport.routes[("GET", f"/{vin}/status")] = json_response({"status": "asleep"})
+
+        def queried_drives(rows=rows):
+            query = transport.calls[-1]["query"]
+            selected = [
+                row for row in rows if int(query["from"]) <= row["started_at"] <= int(query["to"])
+            ][: int(query.get("limit", len(rows)))]
+            response = json_response({"results": selected})
+            # NativeTessieNetwork caps every drives response at 1 MiB.
+            if len(response.body) > 1024 * 1024:
+                return json_response({"error": "response exceeds 1 MiB"}, 502)
+            return response
+
+        transport.routes[("GET", f"/{vin}/drives")] = queried_drives
+    kwargs = {"chat": chat} if chat else {}
+    rt, out, err = make_runtime(tmp_path, transport, **kwargs)
+    path = tmp_path / "input.json"
+    path.write_text(json.dumps(data))
+    args = [str(path)] + (["--include-location"] if include_location else [])
+    code = mileage.main(args, runtime=rt)
+    return code, json.loads(out.getvalue()) if out.getvalue() else None, err.getvalue(), transport
+
+
+@pytest.mark.parametrize("tag", [None, "", "Business"])
+def test_both_airport_legs_csv_and_cached_reads(tmp_path, tag):
+    rows = round_trip()
+    for row in rows:
+        row["tag"] = tag
+    code, result, err, transport = execute(tmp_path, sources(), rows + [rows[0]])
+    assert code == 0 and not err and result is not None
+    assert [row["drive_id"] for row in result["business"]] == [10001, 10002]
+    assert result["ambiguous"] == []
+    assert list(csv.reader(io.StringIO(result["csv"]))) == [
+        ["date", "from", "to", "miles", "purpose", "vehicle"],
+        [
+            "2025-11-01",
+            "Home, Nashville",
+            "Nashville International Airport",
+            "12.35",
+            'Work, "Conference"',
+            "The Rustler",
+        ],
+        [
+            "2025-11-05",
+            "Nashville International Airport",
+            "Home, Nashville",
+            "10.25",
+            'Work, "Conference"',
+            "The Rustler",
+        ],
+    ]
+    assert result["summary"] == (
+        "2025-11: 2 work drives, 22.60 miles; 0 drives need confirmation; "
+        "Tessie tags not applied by this report."
+    )
+    assert all(call["method"] == "GET" for call in transport.calls)
+    query = next(c["query"] for c in transport.calls if c["path"].endswith("/drives"))
+    assert query == {
+        "from": "0",
+        "to": str(epoch("2025-12-01T06:00:00-06:00")),
+        "limit": "100",
+    }
+
+
+def test_tripit_single_digit_utc_offset_keeps_both_legs(tmp_path):
+    # TripIt v1 documents utc_offset values such as -8:00 (one-digit hour).
+    data = sources()
+    segments = data["tripit"]["AirObject"][0]["Segment"]
+    for seg, offset in zip(segments, ("-5:00", "-6:00"), strict=True):
+        for field in ("StartDateTime", "EndDateTime"):
+            seg[field]["utc_offset"] = offset
+    code, result, err, _ = execute(tmp_path, data, round_trip())
+    assert code == 0 and not err and result is not None
+    assert [row["drive_id"] for row in result["business"]] == [10001, 10002]
+    assert result["ambiguous"] == []
+
+
+@pytest.mark.parametrize("tag", [0, False, 1, True, [], {}, ["Business"], {"tag": "Business"}])
+def test_malformed_drive_tag_fails_without_partial_csv_or_writes(tmp_path, tag):
+    rows = round_trip()
+    rows[1]["tag"] = tag
+    code, result, err, transport = execute(tmp_path, sources(), rows)
+    assert code == 1 and result is None
+    assert "refresh complete TripIt/Tessie source data" in err
+    assert all(call["method"] == "GET" for call in transport.calls)
+
+
+def test_personal_and_uncertain_drives_wait_for_one_batch(tmp_path):
+    rows = round_trip()
+    rows[0]["tag"] = "Personal"
+    rows[1]["starting_location"] = "Unresolved airport address"
+    within = drive(
+        10003, "2025-11-03T09:00:00-06:00", "2025-11-03T09:30:00-06:00", "Hotel", "Conference"
+    )
+    code, result, _, transport = execute(tmp_path, sources(), rows, second=[within])
+    assert code == 0 and result is not None
+    assert result["business"] == []
+    assert [r["drive_id"] for r in result["ambiguous"]] == [10001, 10003, 10002]
+    assert "existing tag" in result["ambiguous"][0]["reason"]
+    assert len(list(csv.reader(io.StringIO(result["csv"])))) == 1
+    assert all(call["method"] == "GET" for call in transport.calls)
+
+
+def test_explicit_batch_decision_includes_personal_row_without_writing_tag(tmp_path):
+    data = sources()
+    rows = round_trip()
+    rows[0]["tag"] = "Personal"
+    data["confirmed"] = [
+        {"vin_suffix": RUSTLER[-4:], "drive_id": 10001, "purpose": "Owner confirmed work trip"}
+    ]
+    code, result, _, transport = execute(tmp_path, data, rows)
+    assert code == 0 and result is not None and result["ambiguous"] == []
+    assert result["business"][0]["purpose"] == "Owner confirmed work trip"
+    assert len(result["business"]) == 2
+    assert all(c["method"] == "GET" for c in transport.calls)
+
+
+def test_competing_airport_drives_across_vehicles_are_ambiguous(tmp_path):
+    rows = round_trip()
+    code, result, _, _ = execute(tmp_path, sources(), rows, second=[dict(rows[0], id=20001)])
+    assert code == 0 and result is not None
+    assert [r["drive_id"] for r in result["business"]] == [10002]
+    assert len(result["ambiguous"]) == 2
+    assert all("multiple drives" in r["reason"] for r in result["ambiguous"])
+
+
+@pytest.mark.parametrize("month,expected", [("2025-10", 10001), ("2025-11", 10002)])
+@pytest.mark.parametrize("leg", ["departure", "return"])
+def test_competing_airport_drives_across_months_need_confirmation(tmp_path, month, expected, leg):
+    data = sources()
+    data["month"] = month
+    segments = data["tripit"]["AirObject"][0]["Segment"]
+    if leg == "departure":
+        segments[0]["StartDateTime"]["time"] = "02:00:00"
+        times = [
+            ("2025-10-31T22:00:00-05:00", "2025-10-31T22:30:00-05:00"),
+            ("2025-11-01T00:00:00-05:00", "2025-11-01T00:30:00-05:00"),
+        ]
+        origin, destination = "Home", "Nashville International Airport"
+    else:
+        data["bookings"][0]["flights"][0]["date"] = "2025-10-29"
+        for field in ("StartDateTime", "EndDateTime"):
+            segments[0][field]["date"] = "2025-10-29"
+            segments[1][field]["date"] = "2025-10-31"
+        segments[1]["EndDateTime"]["time"] = "23:00:00"
+        segments[1]["EndDateTime"]["utc_offset"] = "-05:00"
+        times = [
+            ("2025-10-31T23:15:00-05:00", "2025-10-31T23:45:00-05:00"),
+            ("2025-11-01T00:30:00-05:00", "2025-11-01T01:00:00-05:00"),
+        ]
+        origin, destination = "Nashville International Airport", "Home"
+    rows = [
+        drive(10001 + i, begin, end, origin, destination) for i, (begin, end) in enumerate(times)
+    ]
+    code, result, err, transport = execute(tmp_path, data, rows[:1], second=rows[1:])
+    assert code == 0 and not err and result is not None
+    assert result["business"] == []
+    assert [r["drive_id"] for r in result["ambiguous"]] == [expected]
+    assert "multiple drives" in result["ambiguous"][0]["reason"]
+    assert len(list(csv.reader(io.StringIO(result["csv"])))) == 1
+    for call in transport.calls:
+        if call["path"].endswith("/drives"):
+            assert int(call["query"]["from"]) <= rows[0]["started_at"]
+            assert int(call["query"]["to"]) > rows[1]["started_at"]
+
+
+@pytest.mark.parametrize("with_air", [False, True])
+def test_tripit_error_fails_without_partial_csv_or_vehicle_reads(tmp_path, with_air):
+    data = sources()
+    if not with_air:
+        data["tripit"] = {}
+    data["tripit"]["Error"] = {"code": "500", "description": "Unavailable"}
+    code, result, err, transport = execute(tmp_path, data, round_trip())
+    assert code == 1 and result is None
+    assert "refresh complete TripIt/Tessie source data" in err
+    assert transport.calls == []
+
+
+@pytest.mark.parametrize("field", ["start_airport_code", "end_airport_code"])
+@pytest.mark.parametrize("code", [None, "", "bna", "BNAA", 123, "missing"])
+def test_invalid_airport_code_fails_before_personal_drive_can_match(tmp_path, field, code):
+    data = sources()
+    unbooked = segment(
+        "2025-11-01", "10:00:00", "BNA", "SEA", "999", "2025-11-01", "14:00:00", "-05:00"
+    )
+    if code == "missing":
+        del unbooked[field]
+    else:
+        unbooked[field] = code
+    data["tripit"]["AirObject"][0]["Segment"].insert(0, unbooked)
+    personal = drive(
+        20001, "2025-11-01T06:00:00-05:00", "2025-11-01T06:30:00-05:00", "Home", "Friend's House"
+    )
+    status, result, err, transport = execute(tmp_path, data, [personal])
+    assert status == 1 and result is None and "Cannot build mileage report" in err
+    assert transport.calls == []
+
+
+@pytest.mark.parametrize("competitor", [False, True])
+def test_large_history_fits_broker_cap_and_preserves_old_competitors(tmp_path, competitor):
+    rows = round_trip()
+    history = []
+    for i in range(4000):
+        begin = datetime.fromisoformat("2010-01-01T09:00:00-06:00") + timedelta(days=i)
+        history.append(
+            drive(
+                30000 + i,
+                begin.isoformat(),
+                (begin + timedelta(minutes=30)).isoformat(),
+                "Home",
+                "Personal errand",
+            )
+        )
+    if competitor:
+        history.append(
+            drive(
+                40001,
+                "2010-01-01T10:00:00-06:00",
+                "2025-11-01T08:15:00-05:00",
+                "Home",
+                "Nashville International Airport",
+            )
+        )
+    assert len(json_response({"results": history + rows}).body) > 1024 * 1024
+    code, result, err, transport = execute(tmp_path, sources(), history + rows)
+    assert code == 0 and not err and result is not None
+    assert [r["drive_id"] for r in result["business"]] == (
+        [10002] if competitor else [10001, 10002]
+    )
+    assert [r["drive_id"] for r in result["ambiguous"]] == ([10001] if competitor else [])
+    assert len(list(csv.reader(io.StringIO(result["csv"])))) == (2 if competitor else 3)
+    assert all(c["method"] == "GET" for c in transport.calls)
+
+
+def test_full_indivisible_history_window_fails_without_partial_csv(tmp_path):
+    rows = [dict(round_trip()[0], id=50000 + i) for i in range(100)]
+    code, result, err, _ = execute(tmp_path, sources(), rows)
+    assert code == 1 and result is None and "Cannot build mileage report" in err
+
+
+def test_later_history_window_failure_discards_partial_report(tmp_path, monkeypatch):
+    original = mileage.read_vehicle
+
+    def failing_read(*args, **kwargs):
+        if kwargs["query"]["from"] > 0:
+            raise mileage.TessieError("Refresh Tessie history after provider failure")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mileage, "read_vehicle", failing_read)
+    rows = [dict(round_trip()[0], id=50000 + i) for i in range(100)]
+    code, result, err, _ = execute(tmp_path, sources(), rows)
+    assert code == 1 and result is None and "Refresh Tessie history" in err
+
+
+@pytest.mark.parametrize("month,expected", [("2025-10", 10001), ("2025-11", 10002)])
+@pytest.mark.parametrize(
+    "departure,times",
+    [
+        (
+            "00:15:00",
+            [
+                ("2025-10-31T17:45:00-05:00", "2025-10-31T18:15:00-05:00"),
+                ("2025-11-01T00:01:00-05:00", "2025-11-01T00:10:00-05:00"),
+            ],
+        ),
+        (
+            "06:30:00",
+            [
+                ("2025-10-31T23:30:00-05:00", "2025-11-01T00:45:00-05:00"),
+                ("2025-11-01T06:05:00-05:00", "2025-11-01T06:20:00-05:00"),
+            ],
+        ),
+        (
+            "06:30:00",
+            [
+                ("2025-10-30T23:30:00-05:00", "2025-11-01T00:45:00-05:00"),
+                ("2025-11-01T06:05:00-05:00", "2025-11-01T06:20:00-05:00"),
+            ],
+        ),
+    ],
+)
+def test_competitors_outside_fixed_month_window_need_confirmation(
+    tmp_path, month, expected, departure, times
+):
+    data = sources()
+    data["month"] = month
+    data["tripit"]["AirObject"][0]["Segment"][0]["StartDateTime"]["time"] = departure
+    rows = [
+        drive(10001 + i, begin, end, "Home", "Nashville International Airport")
+        for i, (begin, end) in enumerate(times)
+    ]
+    code, result, err, transport = execute(tmp_path, data, rows[:1], second=rows[1:])
+    assert code == 0 and not err and result is not None
+    assert result["business"] == []
+    assert [r["drive_id"] for r in result["ambiguous"]] == [expected]
+    assert "multiple drives" in result["ambiguous"][0]["reason"]
+    assert len(list(csv.reader(io.StringIO(result["csv"])))) == 1
+    assert all(call["method"] == "GET" for call in transport.calls)
+
+
+def test_destination_alone_is_never_work(tmp_path):
+    data = sources()
+    data["bookings"] = []
+    code, result, _, transport = execute(tmp_path, data, round_trip())
+    assert code == 0 and result is not None and result["business"] == []
+    assert all(c["method"] == "GET" for c in transport.calls)
+
+
+@pytest.mark.parametrize("field", ["number", "date", "from", "airline"])
+def test_booking_missing_from_tripit_is_source_gap(tmp_path, field):
+    data = sources()
+    data["bookings"][0]["flights"][0][field] = "mismatch"
+    code, result, err, transport = execute(tmp_path, data, round_trip())
+    assert code == 1 and result is None
+    assert "missing from TripIt" in err and "mismatch" in err
+    assert not any(c["path"].endswith("/drives") for c in transport.calls)
+
+
+def test_segment_without_airline_code_still_bounds_trip(tmp_path):
+    # TripIt v1 AirObject may carry marketing_airline without marketing_airline_code.
+    data = sources()
+    unmatched = data["tripit"]["AirObject"][0]["Segment"][1]
+    del unmatched["marketing_airline_code"]
+    unmatched["marketing_airline"] = "Delta"
+    code, result, err, _ = execute(tmp_path, data, round_trip())
+    assert code == 0 and not err and result is not None
+    assert [row["drive_id"] for row in result["business"]] == [10001, 10002]
+
+
+def test_trip_crossing_month_boundary_retains_return_and_midnight_pickup(tmp_path):
+    data = sources()
+    data["bookings"][0]["flights"][0]["date"] = "2025-10-31"
+    data["tripit"]["AirObject"][0]["Segment"][0]["StartDateTime"]["date"] = "2025-10-31"
+    data["tripit"]["AirObject"][0]["Segment"][1]["EndDateTime"]["time"] = "23:30:00"
+    row = drive(
+        10002,
+        "2025-11-06T00:30:00-06:00",
+        "2025-11-06T01:00:00-06:00",
+        "Nashville International Airport",
+        "Home",
+    )
+    code, result, _, _ = execute(tmp_path, data, [row])
+    assert code == 0 and result is not None
+    assert result["business"][0]["date"] == "2025-11-06"
+
+
+def test_singleton_tripit_and_csv_formula_escaping(tmp_path):
+    data = sources()
+    data["bookings"][0]["purpose"] = '=HYPERLINK("https://example.invalid")'
+    air = data["tripit"]["AirObject"][0]
+    air["Segment"] = air["Segment"][0]
+    data["tripit"]["AirObject"] = air
+    rows = round_trip()[:1]
+    rows[0]["starting_location"] = "@formula\nsecond line"
+    code, result, _, _ = execute(tmp_path, data, rows)
+    assert code == 0 and result is not None
+    csv_rows = list(csv.reader(io.StringIO(result["csv"])))
+    assert csv_rows[1][1] == "'@formula\nsecond line"
+    assert csv_rows[1][4].startswith("'=HYPERLINK")
+
+
+@pytest.mark.parametrize(
+    "change", ["distance", "nan", "duplicate", "source", "timezone", "confirmation"]
+)
+def test_bad_data_fails_without_partial_csv(tmp_path, change):
+    data, rows = sources(), round_trip()
+    if change == "distance":
+        rows[1]["distance"] = rows[1].pop("odometer_distance")
+    elif change == "nan":
+        rows[1]["odometer_distance"] = float("nan")
+    elif change == "duplicate":
+        rows.append(dict(rows[0], odometer_distance=99))
+    elif change == "source":
+        data["bookings"][0]["source"] = "personal-mail"
+    elif change == "timezone":
+        data["timezone"] = "missing/timezone"
+    else:
+        data["confirmed"] = [{"vin_suffix": "unknown", "drive_id": 10001, "purpose": "work"}]
+    code, result, err, transport = execute(tmp_path, data, rows)
+    assert code == 1 and result is None
+    assert "Check INPUT_JSON" in err
+    assert all(call["method"] == "GET" for call in transport.calls)
+
+
+@pytest.mark.parametrize("chat,flag", [(READ_CHAT, True), (None, False)])
+def test_owner_location_authority_required_before_vehicle_reads(tmp_path, chat, flag):
+    code, result, _, transport = execute(
+        tmp_path, sources(), round_trip(), chat=chat, include_location=flag
+    )
+    assert code == 4 and result is None and transport.calls == []
+
+
+def test_provider_failure_is_not_an_empty_report(tmp_path):
+    transport = FakeTransport({("GET", "/vehicles"): json_response({"error": "unavailable"}, 503)})
+    rt, out, err = make_runtime(tmp_path, transport)
+    path = tmp_path / "input.json"
+    path.write_text(json.dumps(sources()))
+    assert mileage.main([str(path), "--include-location"], runtime=rt) == 1
+    assert out.getvalue() == "" and "503" in err.getvalue()
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.parametrize("provider_status,accepted", [(200, True), (200, False), (403, False)])
+def test_report_ids_feed_existing_tag_flow_and_csv_survives_tag_failure(
+    tmp_path, provider_status, accepted
+):
+    data, rows = sources(), round_trip()
+    expected_id = 10002
+    rows[0]["tag"] = "Personal"
+    code, result, _, transport = execute(tmp_path, data, rows)
+    assert code == 0 and result is not None
+    original_csv = result["csv"]
+    assert [r["drive_id"] for r in result["business"]] == [expected_id]
+    transport.routes[("POST", f"/{RUSTLER}/drives/set_tag")] = json_response(
+        {"result": accepted}, provider_status
+    )
+    rt, out, _ = make_runtime(tmp_path, transport)
+    command = load_script("tessie-ops", "tessie-command")
+    args = [
+        "set_drive_tag",
+        "--vehicle",
+        result["business"][0]["vehicle"]["alias"],
+        "--drives",
+        str(result["business"][0]["drive_id"]),
+        "--tag",
+        "Business",
+    ]
+    assert command.main(args + ["--dry-run"], runtime=rt) == 0
+    plan = json.loads(out.getvalue())
+    out.seek(0)
+    out.truncate()
+    assert command.main(args + ["--confirm", plan["confirm_with"]], runtime=rt) == (
+        0 if accepted else 1
+    )
+    writes = [c for c in transport.calls if c["method"] == "POST"]
+    assert len(writes) == 1
+    assert json.loads(writes[0]["body"]) == {"drives": str(expected_id), "tag": "Business"}
+    assert result["csv"] == original_csv
+    if provider_status == 200:
+        assert json.loads(out.getvalue())["status"] == ("accepted" if accepted else "failed")
+
+
+def test_in_trip_drive_is_exported_only_after_batch_confirmation(tmp_path):
+    data = sources()
+    row = drive(
+        10003, "2025-11-03T09:00:00-06:00", "2025-11-03T09:30:00-06:00", "Hotel", "Conference"
+    )
+    data["confirmed"] = [
+        {"vin_suffix": RUSTLER[-4:], "drive_id": 10003, "purpose": "Work conference local drive"}
+    ]
+    code, result, _, transport = execute(tmp_path, data, [row])
+    assert code == 0 and result is not None
+    assert result["ambiguous"] == []
+    assert result["business"][0]["drive_id"] == 10003
+    assert "Work conference local drive" in result["csv"]
+    assert all(c["method"] == "GET" for c in transport.calls)
