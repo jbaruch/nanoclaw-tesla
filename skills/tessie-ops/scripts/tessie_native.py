@@ -55,7 +55,13 @@ class NativeIPC:
         if not _REQUEST_ID.fullmatch(request_id):
             raise unavailable()
         session = os.environ.get("NANOCLAW_SESSION_NAME", "default")
-        if session not in ("default", "maintenance"):
+        time_sensitive_poll = (
+            session == "maintenance-time-sensitive"
+            and self.message_type == "tessie_late_request"
+            and isinstance(payload, dict)
+            and payload.get("operation") == "poll"
+        )
+        if session not in ("default", "maintenance") and not time_sensitive_poll:
             raise unavailable()
         target = self.root / "tasks" / f"tessie-{request_id}.json"
         temporary = target.with_suffix(".tmp")

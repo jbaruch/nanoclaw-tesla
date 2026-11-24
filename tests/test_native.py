@@ -55,6 +55,17 @@ def test_native_atomic_task_and_session_correlated_reply(tmp_path, monkeypatch):
     assert not list((tmp_path / "input").iterdir())
 
 
+def test_time_sensitive_session_refuses_unrelated_tessie_operations(tmp_path, monkeypatch):
+    monkeypatch.setenv("NANOCLAW_SESSION_NAME", "maintenance-time-sensitive")
+    ipc, _ = ipc_fixture(tmp_path, {"schema_version": 1, "status": 200, "data": {}})
+    with pytest.raises(TessieError):
+        ipc.call({"schema_version": 1, "operation": "poll"}, 1)
+    ipc.message_type = "tessie_late_request"
+    with pytest.raises(TessieError):
+        ipc.call({"schema_version": 1, "operation": "status"}, 1)
+    assert not list((tmp_path / "tasks").iterdir())
+
+
 @pytest.mark.parametrize(
     "reply",
     [
