@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.11 — 2026-11-24
+
+- fix(running-late): admit the time-sensitive poll session (#35)
+
 ## 0.5.10 — 2026-11-23
 
 - feat(tesla): log Navan-trip work drives for expenses (#32)
