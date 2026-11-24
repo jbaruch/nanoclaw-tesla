@@ -18,7 +18,13 @@ callback = load_script("tessie-running-late", "tessie-late-callback-v1")
 adapter = load_script("tessie-ops", "tessie-argv")
 
 
-def test_closed_ipc_payload_uses_actual_native_transport_shape(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("session", "operation"),
+    [("maintenance", "status"), ("maintenance-time-sensitive", "poll")],
+)
+def test_closed_ipc_payload_uses_actual_native_transport_shape(
+    monkeypatch, tmp_path, session, operation
+):
     request_id = "00112233445566778899aabbccddeeff"
     (tmp_path / "tasks").mkdir()
     (tmp_path / "input").mkdir()
@@ -27,8 +33,8 @@ def test_closed_ipc_payload_uses_actual_native_transport_shape(monkeypatch, tmp_
     expected = {
         "type": "tessie_late_request",
         "requestId": request_id,
-        "sessionName": "maintenance",
-        "payload": {"schema_version": 1, "operation": "status"},
+        "sessionName": session,
+        "payload": {"schema_version": 1, "operation": operation},
     }
 
     def receive(seconds):
@@ -52,9 +58,9 @@ def test_closed_ipc_payload_uses_actual_native_transport_shape(monkeypatch, tmp_
     bridge = real_native(
         tmp_path, monotonic=lambda: elapsed[0], sleep=receive, request_id=lambda: request_id
     )
-    monkeypatch.setenv("NANOCLAW_SESSION_NAME", "maintenance")
+    monkeypatch.setenv("NANOCLAW_SESSION_NAME", session)
     monkeypatch.setattr(late_ipc, "native_type", lambda: lambda: bridge)
-    assert late_ipc.call("status") == {"attempts": 0}
+    assert late_ipc.call(operation) == {"attempts": 0}
     assert observed == [expected]
     assert not list((tmp_path / "tasks").glob("*.tmp"))
     assert not list((tmp_path / "input").iterdir())
